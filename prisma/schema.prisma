@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Student {
+  id        String   @id @default(uuid())
+  name      String
+  level     String   
+  results   Result[]
+}
+
+model Subject {
+  id      String   @id @default(uuid())
+  name    String   @unique
+  domains Domain[]
+}
+
+model Domain {
+  id        String   @id @default(uuid())
+  name      String
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id])
+  notions   Notion[]
+}
+
+model Notion {
+  id       String   @id @default(uuid())
+  title    String
+  domainId String
+  domain   Domain   @relation(fields: [domainId], references: [id])
+  results  Result[]
+}
+
+model Result {
+  id        String   @id @default(uuid())
+  score     Int      @default(0)
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  notionId  String
+  notion    Notion   @relation(fields: [notionId], references: [id])
+
+  @@unique([studentId, notionId])
+}

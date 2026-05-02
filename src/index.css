@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* Optionnel : pour vérifier que le CSS de base fonctionne */
+body {
+  background-color: #f8fafc;
+  margin: 0;
+}
