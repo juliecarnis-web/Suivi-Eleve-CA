@@ -122,6 +122,7 @@ function useTrackingData() {
     competenceId: string,
     updates: Partial<Pick<Result, 'successCount' | 'isTaught'>>
   ) => {
+    // 1. Mise à jour visuelle immédiate (pour la fluidité)
     setResults((prev) => {
       const next = { ...prev };
       const currentStudent = next[studentId] || {};
@@ -130,25 +131,33 @@ function useTrackingData() {
       return next;
     });
 
+    // 2. Enregistrement réel dans la base de données via l'API
     try {
-      const sCount = updates.successCount !== undefined ? updates.successCount : 0;
-      const taught = updates.isTaught !== undefined ? updates.isTaught : false;
+      // On prépare les données (on s'assure d'avoir des valeurs par défaut)
+      const score = updates.successCount !== undefined ? updates.successCount : 0;
+      const isStarted = updates.isTaught !== undefined ? updates.isTaught : false;
 
-      // Note: On utilise ici le nom exact de ton fichier api/upsert-result.ts
-      await fetch('/api/upsert-result', {
+      const response = await fetch('/api/upsert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentId,
           competenceId,
-          score: sCount,
-          isStarted: taught
-        })
+          score,
+          isStarted
+        }),
       });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la sauvegarde');
+      }
+      
+      console.log("✅ Sauvegarde réussie pour l'élève:", studentId);
     } catch (error) {
-      console.error("Erreur sauvegarde via API:", error);
+      console.error("❌ Échec de la sauvegarde:", error);
+      alert("La note n'a pas pu être enregistrée dans la base de données.");
     }
-  }, []);
+  }, [setResults]);
 
   const importStudents = useCallback(async (imported: Student[]) => {
     try {
