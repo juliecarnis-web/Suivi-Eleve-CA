@@ -301,7 +301,8 @@ export default function App() {
     if (filterSubDomain !== 'all') filtered = filtered.filter(c => c.subDomain === filterSubDomain);
 
     const grades = Array.from(new Set(competences.map(c => getGrade(c)).filter(Boolean)));
-    const allCodes = Array.from(new Set(filtered.map(c => getCode(c)).filter(Boolean)));
+    const allCodes = Array.from(new Set(filtered.map(c => getCode(c)).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
     return { uniqueCompGrades: grades, codes: allCodes };
   }, [competences, filterGrade, filterDomain, filterSubDomain, getCode, getGrade, getDomain]);
