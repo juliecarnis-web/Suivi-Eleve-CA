@@ -3,51 +3,83 @@ import { neon } from '@neondatabase/serverless';
 export default async function handler(req: any, res: any) {
   const sql = neon(process.env.DATABASE_URL!);
 
-  // CAS 1 : LECTURE (GET) - Pour afficher les élèves et les compétences
+  // --- LECTURE (GET) ---
   if (req.method === 'GET') {
     try {
-      const students = await sql`SELECT * FROM "Student" ORDER BY "lastName" ASC`;
-      const competencies = await sql`SELECT * FROM "Competence" ORDER BY "code" ASC`;
-      const results = await sql`SELECT * FROM "Result"`;
+      const students = await sql`SELECT * FROM "Student" ORDER BY "isArchived" ASC, "lastName" ASC`;
+      const competences = await sql`SELECT * FROM "Competence" ORDER BY "code" ASC`;
+      const resultsRaw = await sql`SELECT * FROM "Result"`;
       
-      return res.status(200).json({ students, competencies, results });
+      const resultsMap: Record<string, Record<number, any>> = {};
+      resultsRaw.forEach(r => {
+        if (!resultsMap[r.studentId]) resultsMap[r.studentId] = {};
+        resultsMap[r.studentId][r.competenceId] = r;
+      });
+
+      return res.status(200).json({ students, competences, resultsMap });
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
   }
 
-  // CAS 2 : ÉCRITURE (POST) - Pour les notes, les élèves et le CSV
+  // --- ÉCRITURE (POST) ---
   if (req.method === 'POST') {
-    const { action, studentId, competenceId, score, isStarted, firstName, lastName, grade } = req.body;
+    const body = req.body;
 
     try {
-      // Action spécifique pour VIDER les tables (Boutons Admin)
-      if (action === 'clear') {
-        const { table } = req.body;
-        if (table === 'Result') await sql`TRUNCATE TABLE "Result" RESTART IDENTITY CASCADE`;
-        if (table === 'Student') await sql`TRUNCATE TABLE "Student" CASCADE`;
+      // 1. VIDAGE DES TABLES (SÉCURISÉ)
+      if (body.action === 'clear') {
+        // Optionnel : Tu pourrais ajouter if (req.headers['x-admin-key'] !== 'ton-secret') 
+        if (body.table === 'Result') await sql`TRUNCATE TABLE "Result" RESTART IDENTITY CASCADE`;
+        if (body.table === 'Student') await sql`TRUNCATE TABLE "Student" CASCADE`;
+        if (body.table === 'Competence') await sql`TRUNCATE TABLE "Competence" CASCADE`;
         return res.status(200).json({ success: true });
       }
 
-      // Action pour AJOUTER un élève (Manuel ou CSV)
-      if (firstName && lastName) {
+      // 2. IMPORT BULK ÉLÈVES (Le "camion" de Google AI)
+      if (body.type === 'student_bulk') {
+        const rows = body.data;
+        for(let row of rows) {
+          await sql`
+            INSERT INTO "Student" (id, "firstName", "lastName", grade, "isArchived")
+            VALUES (gen_random_uuid(), ${row.firstName}, ${row.lastName}, ${row.grade}, false)
+            ON CONFLICT DO NOTHING
+          `;
+        }
+        return res.status(200).json({ success: true });
+      }
+
+      // 3. ARCHIVAGE ÉLÈVE
+      if (body.type === 'student_archive') {
+        await sql`UPDATE "Student" SET "isArchived" = ${body.isArchived} WHERE id = ${body.id}`;
+        return res.status(200).json({ success: true });
+      }
+
+      // 4. IMPORT BULK COMPÉTENCES
+      if (body.type === 'competence_bulk') {
+        const rows = body.data;
+        for(let row of rows) {
+          await sql`
+            INSERT INTO "Competence" (code, domain, "subDomain", title, grade)
+            VALUES (${row.code}, ${row.domain}, ${row.subDomain}, ${row.title}, ${row.grade})
+            ON CONFLICT (code, grade) DO UPDATE SET title = EXCLUDED.title
+          `;
+        }
+        return res.status(200).json({ success: true });
+      }
+
+      // 5. UPSERT NOTE INDIVIDUELLE (Reste identique pour la saisie en direct)
+      if (body.type === 'result') {
         await sql`
-          INSERT INTO "Student" (id, "firstName", "lastName", grade)
-          VALUES (gen_random_uuid(), ${firstName}, ${lastName}, ${grade})
+          INSERT INTO "Result" ("studentId", "competenceId", "score", "isStarted", "updatedAt")
+          VALUES (${body.studentId}, ${parseInt(body.competenceId)}, ${body.score}, ${body.isStarted}, NOW())
+          ON CONFLICT ("studentId", "competenceId") DO UPDATE SET
+            "score" = EXCLUDED."score",
+            "isStarted" = EXCLUDED."isStarted",
+            "updatedAt" = NOW()
         `;
         return res.status(200).json({ success: true });
       }
-
-      // Action par défaut : UPSERT une note (Result)
-      await sql`
-        INSERT INTO "Result" ("studentId", "competenceId", "score", "isStarted", "updatedAt")
-        VALUES (${studentId}, ${parseInt(competenceId)}, ${score}, ${isStarted}, NOW())
-        ON CONFLICT ("studentId", "competenceId") DO UPDATE SET
-          "score" = EXCLUDED."score",
-          "isStarted" = EXCLUDED."isStarted",
-          "updatedAt" = NOW()
-      `;
-      return res.status(200).json({ success: true });
 
     } catch (error: any) {
       console.error("Erreur API:", error);

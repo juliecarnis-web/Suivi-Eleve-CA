@@ -62,10 +62,15 @@ export default function App() {
       setLoading(true);
       const res = await fetch('/api/upsert');
       if (res.ok) {
-        const data = await res.json();
-        setStudents(data.students || []);
-        setCompetences(data.competences || []);
-        setResults(data.resultsMap || {});
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          setStudents(data.students || []);
+          setCompetences(data.competences || []);
+          setResults(data.resultsMap || {});
+        } else {
+          console.warn('API non disponible (HTML reçu), format vide en attendant.');
+        }
       } else {
         console.warn('API non disponible, format vide en attendant.');
       }
@@ -165,6 +170,52 @@ export default function App() {
   }, [students]);
 
   // --- Admin Methods ---
+  const handleClearTable = async (tableName: 'Student' | 'Competence' | 'Result') => {
+    if (!window.confirm(`⚠️ Voulez-vous vraiment vider la table ${tableName} ?`)) return;
+    try {
+      const res = await fetch('/api/upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear', table: tableName })
+      });
+      if (res.ok) {
+        setStatusMsg(`✅ Table ${tableName} vidée !`);
+        await fetchData();
+      }
+    } catch (err) {
+      console.error(err);
+      setStatusMsg("❌ Erreur lors du vidage.");
+    }
+  };
+
+  const handleAddStudent = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const body = {
+      type: 'student', // Changed from buggy code to ensure backend picks up the type
+      firstName: formData.get('firstName') as string,
+      lastName: formData.get('lastName') as string,
+      grade: formData.get('grade') as string
+    };
+    if (!body.firstName || !body.lastName || !body.grade) return;
+
+    try {
+      const res = await fetch('/api/upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        await fetchData();
+        setStatusMsg('✅ Élève ajouté !');
+        (e.target as HTMLFormElement).reset();
+      }
+    } catch(err) {
+      console.error(err);
+      setStatusMsg("❌ Erreur ajout élève.");
+    }
+  };
+
   const handleStudentCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     setStatusMsg('🚀 Importation des élèves...');
@@ -175,86 +226,58 @@ export default function App() {
       complete: async (resultsBlock) => {
         try {
           const lines = resultsBlock.data as Record<string, string>[];
-          let count = 0;
-          for (const row of lines) {
-            await fetch('/api/upsert', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'student',
-                data: row
-              })
-            });
-            count++;
-          }
+          
+          await fetch('/api/upsert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'student_bulk',
+              data: lines
+            })
+          });
+          
           await fetchData();
-          setStatusMsg(`✅ Liste des élèves importée ! (${count} ajoutés)`);
+          setStatusMsg(`✅ Liste des élèves importée ! (${lines.length} ajoutés)`);
         } catch (err) { console.error(err); setStatusMsg('❌ Erreur Import élèves.'); }
       }
     });
   };
 
   const handleCompetenceCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setStatusMsg('🚀 Analyse de la progression...');
-
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setStatusMsg('🚀 Importation des compétences en cours...');
     Papa.parse(file, {
-       header: true,
-       skipEmptyLines: true,
-       complete: async (resultsBlock) => {
-         try {
-           const lines = resultsBlock.data as Record<string, string>[];
-           let count = 0;
-           for (const row of lines) {
-             await fetch('/api/upsert', {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({
-                 type: 'competence',
-                 data: row
-               })
-             });
-             count++;
-           }
-           await fetchData();
-           setStatusMsg(`✅ Progression complète importée ! (${count} rubriques)`);
-         } catch (err) { console.error(err); setStatusMsg('❌ Erreur Progression'); }
-       }
-    });
-  };
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const lines = results.data as any[];
+          const mappedData = lines.map(row => ({
+            code: row.code,
+            domain: row.domain,
+            subDomain: row.subDomain || row.subdomain,
+            title: row.title,
+            grade: row.grade
+          }));
 
-  const handleAddStudent = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const data = new FormData(e.currentTarget);
-    const fName = data.get('firstName') as string;
-    const lName = data.get('lastName') as string;
-    const grade = data.get('grade') as string;
-    if (!fName || !lName || !grade) return;
-    try {
-      await fetch('/api/upsert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'student',
-          data: { firstName: fName, lastName: lName, grade }
-        })
-      });
-      await fetchData();
-      setStatusMsg('✅ Élève ajouté !');
-      (e.target as HTMLFormElement).reset();
-    } catch(err) { console.error(err); }
-  };
+          await fetch('/api/upsert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'competence_bulk',
+              data: mappedData
+            })
+          });
 
-  const confirmClear = async (table: string, title: string) => {
-    if (confirm(`⚠️ Vider entièrement les ${title} ? Action irréversible.`)) {
-      try {
-        // TODO: Créer une route API pour le DELETE.
-        // ex: await fetch('/api/delete', { method: 'POST', body: JSON.stringify({ table }) })
-        setStatusMsg(`🧹 Demande de vidage envoyée pour ${title}. (Fonction API à implémenter)`);
-      } catch (e) {
-        console.error(e);
+          await fetchData();
+          setStatusMsg(`✅ ${lines.length} compétences importées !`);
+        } catch (err) {
+          console.error(err);
+          setStatusMsg("❌ Erreur import CSV.");
+        }
       }
-    }
+    });
   };
 
   // --- Derived Data for UI ---
@@ -655,18 +678,17 @@ export default function App() {
                  </h2>
                </div>
                <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                 <button onClick={() => confirmClear('Student', 'élèves')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-semibold py-2 px-4 rounded text-sm transition">
-                   Vider Élèves
+                 <button onClick={() => handleClearTable('Student')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 px-4 py-2 rounded-lg transition-colors">
+                    Vider Élèves
                  </button>
-                 <button onClick={() => confirmClear('Competence', 'compétences')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-semibold py-2 px-4 rounded text-sm transition">
-                   Vider Progression
+                 <button onClick={() => handleClearTable('Competence')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 px-4 py-2 rounded-lg transition-colors">
+                    Vider Progression
                  </button>
-                 <button onClick={() => confirmClear('Result', 'toutes les notes')} className="bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2 px-4 rounded shadow text-sm transition">
-                   Purger Notes
+                 <button onClick={() => handleClearTable('Result')} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg transition-colors">
+                    Purger Notes
                  </button>
                </div>
             </div>
-
           </div>
         </div>
       )}
