@@ -27,16 +27,15 @@ export default async function handler(req: any, res: any) {
     const body = req.body;
 
     try {
-      // 1. VIDAGE DES TABLES (SÉCURISÉ)
+      // 1. VIDAGE DES TABLES (ADMIN)
       if (body.action === 'clear') {
-        // Optionnel : Tu pourrais ajouter if (req.headers['x-admin-key'] !== 'ton-secret') 
         if (body.table === 'Result') await sql`TRUNCATE TABLE "Result" RESTART IDENTITY CASCADE`;
         if (body.table === 'Student') await sql`TRUNCATE TABLE "Student" CASCADE`;
         if (body.table === 'Competence') await sql`TRUNCATE TABLE "Competence" CASCADE`;
         return res.status(200).json({ success: true });
       }
 
-      // 2. IMPORT BULK ÉLÈVES (Le "camion" de Google AI)
+      // 2. IMPORT BULK ÉLÈVES (CSV)
       if (body.type === 'student_bulk') {
         const rows = body.data;
         for(let row of rows) {
@@ -49,26 +48,38 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ success: true });
       }
 
+      // 2 Bis. AJOUT MANUEL D'UN ÉLÈVE (FORMULAIRE)
+      if (body.type === 'student') {
+        await sql`
+          INSERT INTO "Student" (id, "firstName", "lastName", grade, "isArchived")
+          VALUES (gen_random_uuid(), ${body.firstName}, ${body.lastName}, ${body.grade}, false)
+          ON CONFLICT DO NOTHING
+        `;
+        return res.status(200).json({ success: true });
+      }
+
       // 3. ARCHIVAGE ÉLÈVE
       if (body.type === 'student_archive') {
         await sql`UPDATE "Student" SET "isArchived" = ${body.isArchived} WHERE id = ${body.id}`;
         return res.status(200).json({ success: true });
       }
 
-      // 4. IMPORT BULK COMPÉTENCES
+      // 4. IMPORT BULK COMPÉTENCES (VERSION CORRIGÉE)
       if (body.type === 'competence_bulk') {
         const rows = body.data;
+        console.log(`Tentative d'import de ${rows.length} compétences...`);
+        
         for(let row of rows) {
           await sql`
             INSERT INTO "Competence" (code, domain, "subDomain", title, grade)
             VALUES (${row.code}, ${row.domain}, ${row.subDomain}, ${row.title}, ${row.grade})
-            ON CONFLICT (code, grade) DO UPDATE SET title = EXCLUDED.title
+            ON CONFLICT DO NOTHING
           `;
         }
         return res.status(200).json({ success: true });
       }
 
-      // 5. UPSERT NOTE INDIVIDUELLE (Reste identique pour la saisie en direct)
+      // 5. UPSERT NOTE INDIVIDUELLE
       if (body.type === 'result') {
         await sql`
           INSERT INTO "Result" ("studentId", "competenceId", "score", "isStarted", "updatedAt")
@@ -82,7 +93,7 @@ export default async function handler(req: any, res: any) {
       }
 
     } catch (error: any) {
-      console.error("Erreur API:", error);
+      console.error("Erreur API détaillée:", error);
       return res.status(500).json({ error: error.message });
     }
   }
