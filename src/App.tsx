@@ -1,488 +1,686 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import Papa from 'papaparse';
-import { neon } from '@neondatabase/serverless';
-import { Loader2 } from 'lucide-react';
+import { Loader2, PlusCircle, Upload, Trash2, ShieldAlert, Power, UserX, BookOpen, BarChart2, Settings } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 // --- Utility Functions ---
-export function cn(...inputs: ClassValue[]) {
+function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// --- Neon DB Setup ---
-const NEON_URL = 'postgresql://neondb_owner:npg_H02jNElaQogn@ep-cold-truth-aljkhk6v.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require';
-const sql = neon(NEON_URL);
+function getScoreColor(score: number, isStarted: boolean) {
+  if (!isStarted) return 'bg-slate-100 text-slate-400 border-slate-200';
+  if (score >= 5) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (score >= 3 && score <= 4) return 'bg-amber-50 text-amber-700 border-amber-200';
+  return 'bg-rose-50 text-rose-700 border-rose-200';
+}
 
 // --- Types ---
-export type Student = {
+type Student = {
   id: string;
   firstName: string;
   lastName: string;
   grade: string;
+  isArchived: boolean;
 };
 
-export type Competence = {
-  id: string;
-  domain: string;
-  subDomain: string;
+type Competence = {
+  id: number;
+  code?: string;
+  domain?: string;
+  subDomain?: string;
   title: string;
+  grade?: string;
 };
 
-export type Result = {
+type Result = {
   studentId: string;
-  competenceId: string;
-  successCount: number;
-  isTaught: boolean;
+  competenceId: number;
+  score: number;
+  isStarted: boolean;
 };
 
-export type ResultsMap = Record<string, Record<string, Result>>;
-
-// --- Hook: useTrackingData ---
-function useTrackingData() {
+export default function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const [competences, setCompetences] = useState<Competence[]>([]);
-  const [results, setResults] = useState<ResultsMap>({});
+  // Map of studentId -> competenceId -> Result
+  const [results, setResults] = useState<Record<string, Record<number, Result>>>({});
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage' | 'admin'>('saisie');
 
-  const initTables = useCallback(async () => {
-    try {
-      await sql`
-        CREATE TABLE IF NOT EXISTS "Student" (
-          id UUID PRIMARY KEY,
-          "firstName" TEXT NOT NULL,
-          "lastName" TEXT NOT NULL,
-          grade TEXT NOT NULL
-        );
-      `;
-      await sql`
-        CREATE TABLE IF NOT EXISTS "Competence" (
-          id TEXT PRIMARY KEY,
-          domain TEXT NOT NULL,
-          "subDomain" TEXT NOT NULL,
-          title TEXT NOT NULL
-        );
-      `;
-      await sql`
-        CREATE TABLE IF NOT EXISTS "Result" (
-          "studentId" UUID REFERENCES "Student"(id),
-          "competenceId" TEXT REFERENCES "Competence"(id),
-          "score" INTEGER NOT NULL DEFAULT 0 CHECK ("score" >= 0 AND "score" <= 10),
-          "isStarted" BOOLEAN NOT NULL DEFAULT FALSE,
-          "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-          PRIMARY KEY ("studentId", "competenceId")
-        );
-      `;
-    } catch (e) {
-      console.error('Erreur initialisation tables:', e);
-    }
-  }, []);
+  // Filters for Saisie
+  const [filterGrade, setFilterGrade] = useState<string>('all');
+  const [filterDomain, setFilterDomain] = useState<string>('all');
+  const [filterSubDomain, setFilterSubDomain] = useState<string>('all');
 
+  const [statusMsg, setStatusMsg] = useState('');
+
+  // --- Fetching Logic ---
   const fetchData = useCallback(async () => {
     try {
-      await initTables();
-      const studentsData = await sql`SELECT * FROM "Student"`;
-      const competencesData = await sql`SELECT * FROM "Competence"`;
-      const resultsData = await sql`SELECT * FROM "Result"`;
-
-      const resultsMapLocal: ResultsMap = {};
-      resultsData.forEach(r => {
-        const sId = r.studentId as string;
-        const cId = r.competenceId as string;
-        if (!resultsMapLocal[sId]) resultsMapLocal[sId] = {};
-        resultsMapLocal[sId][cId] = {
-          studentId: sId,
-          competenceId: cId,
-          successCount: r.score as number,
-          isTaught: r.isStarted as boolean
-        };
-      });
-
-      setStudents(studentsData as Student[]);
-      setCompetences(competencesData as Competence[]);
-      setResults(resultsMapLocal);
+      setLoading(true);
+      const res = await fetch('/api/upsert');
+      if (res.ok) {
+        const data = await res.json();
+        setStudents(data.students || []);
+        setCompetences(data.competences || []);
+        setResults(data.resultsMap || {});
+      } else {
+        console.warn('API non disponible, format vide en attendant.');
+      }
     } catch (e) {
       console.error('Erreur chargement données:', e);
     } finally {
       setLoading(false);
     }
-  }, [initTables]);
+  }, []);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  // --- Action Handlers ---
   const upsertResult = useCallback(async (
     studentId: string,
-    competenceId: string,
-    updates: Partial<Pick<Result, 'successCount' | 'isTaught'>>
+    competenceId: number,
+    updates: Partial<Pick<Result, 'score' | 'isStarted'>>
   ) => {
-    // 1. Mise à jour visuelle immédiate (pour la fluidité)
     setResults((prev) => {
       const next = { ...prev };
-      const currentStudent = next[studentId] || {};
-      const current = currentStudent[competenceId] || { studentId, competenceId, successCount: 0, isTaught: false };
-      next[studentId] = { ...currentStudent, [competenceId]: { ...current, ...updates } };
+      if (!next[studentId]) next[studentId] = {};
+      const current = next[studentId][competenceId] || { studentId, competenceId, score: 0, isStarted: false };
+      next[studentId] = { ...next[studentId], [competenceId]: { ...current, ...updates } };
       return next;
     });
 
-    // 2. Enregistrement réel dans la base de données via l'API
     try {
-      // On prépare les données (on s'assure d'avoir des valeurs par défaut)
-      const score = updates.successCount !== undefined ? updates.successCount : 0;
-      const isStarted = updates.isTaught !== undefined ? updates.isTaught : false;
-
-      const response = await fetch('/api/upsert', {
+      await fetch('/api/upsert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          studentId,
-          competenceId,
-          score,
-          isStarted
-        }),
+          type: 'result',
+          studentId: String(studentId),
+          competenceId: parseInt(competenceId as any, 10),
+          score: updates.score ?? 0,
+          isStarted: updates.isStarted ?? false
+        })
       });
-
-      if (!response.ok) {
-        throw new Error('Erreur lors de la sauvegarde');
-      }
-      
-      console.log("✅ Sauvegarde réussie pour l'élève:", studentId);
     } catch (error) {
-      console.error("❌ Échec de la sauvegarde:", error);
-      alert("La note n'a pas pu être enregistrée dans la base de données.");
+      console.error("Erreur upsert:", error);
     }
-  }, [setResults]);
+  }, []);
 
-  const importStudents = useCallback(async (imported: Student[]) => {
-    try {
-      setLoading(true);
-      for (const s of imported) {
-        await sql`
-          INSERT INTO "Student" (id, "firstName", "lastName", grade)
-          VALUES (${s.id}, ${s.firstName}, ${s.lastName}, ${s.grade})
-          ON CONFLICT (id) DO UPDATE SET
-            "firstName" = EXCLUDED."firstName",
-            "lastName" = EXCLUDED."lastName",
-            grade = EXCLUDED.grade
-        `;
-      }
-      await fetchData();
-    } catch (e) {
-      console.error("Erreur import élèves:", e);
-      setLoading(false);
-    }
-  }, [fetchData]);
+  const toggleArchiveStudent = useCallback(async (id: string, isArchived: boolean) => {
+     setStudents(prev => prev.map(s => s.id === id ? { ...s, isArchived } : s));
+     try {
+       await fetch('/api/upsert', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+           type: 'student_archive',
+           id: String(id),
+           isArchived
+         })
+       });
+     } catch (e) { console.error('Archive error', e); }
+  }, []);
 
-  const importCompetences = useCallback(async (imported: Competence[]) => {
-    try {
-      setLoading(true);
-      for (const c of imported) {
-        await sql`
-          INSERT INTO "Competence" (id, domain, "subDomain", title)
-          VALUES (${c.id}, ${c.domain}, ${c.subDomain}, ${c.title})
-          ON CONFLICT (id) DO UPDATE SET
-            domain = EXCLUDED.domain,
-            "subDomain" = EXCLUDED."subDomain",
-            title = EXCLUDED.title
-        `;
-      }
-      await fetchData();
-    } catch (e) {
-      console.error("Erreur import compétences:", e);
-      setLoading(false);
-    }
-  }, [fetchData]);
+  const startCompetencesForCode = useCallback(async (
+    matchingComps: Competence[],
+    isStarted: boolean
+  ) => {
+     setResults((prev) => {
+       const next = { ...prev };
+       students.forEach(s => {
+         if (!next[s.id]) next[s.id] = {};
+         matchingComps.forEach(comp => {
+            const current = next[s.id][comp.id] || { studentId: s.id, competenceId: comp.id, score: 0, isStarted: false };
+            next[s.id] = { ...next[s.id], [comp.id]: { ...current, isStarted } };
+         });
+       });
+       return next;
+     });
 
-  return { students, competences, results, loading, upsertResult, importStudents, importCompetences };
-}
+     try {
+        const promises = students.map(s => {
+           return Promise.all(matchingComps.map(comp => {
+              return fetch('/api/upsert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'result',
+                  studentId: String(s.id),
+                  competenceId: parseInt(comp.id as any, 10),
+                  score: 0,
+                  isStarted
+                })
+              });
+           }));
+        });
+        await Promise.all(promises);
+     } catch (e) {
+        console.error('Erreur switch compétences', e);
+     }
+  }, [students]);
 
-// --- Component: CSVImport ---
-function CSVImport({ onImportStudents, onImportCompetences }: { onImportStudents: (data: any[]) => void, onImportCompetences: (data: any[]) => void }) {
-  const studentsRef = useRef<HTMLInputElement>(null);
-  const competencesRef = useRef<HTMLInputElement>(null);
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'students' | 'competences') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // --- Admin Methods ---
+  const handleStudentCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setStatusMsg('🚀 Importation des élèves...');
+    
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (results) => {
-        if (type === 'students') {
-          const mapped = results.data.map((row: any) => ({
-            id: row.id || crypto.randomUUID(),
-            firstName: row.firstName || row.prenom || '',
-            lastName: row.lastName || row.nom || '',
-            grade: row.grade || row.niveau || '',
-          }));
-          onImportStudents(mapped);
-        } else {
-          const mapped = results.data.map((row: any, i: number) => ({
-            id: row.id || `csv_c_${i}_${Date.now()}`,
-            domain: row.domain || row.domaine || '',
-            subDomain: row.subDomain || row.sousDomaine || '',
-            title: row.title || row.titre || row.intitule || '',
-          }));
-          onImportCompetences(mapped);
-        }
-      },
+      complete: async (resultsBlock) => {
+        try {
+          const lines = resultsBlock.data as Record<string, string>[];
+          let count = 0;
+          for (const row of lines) {
+            await fetch('/api/upsert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'student',
+                data: row
+              })
+            });
+            count++;
+          }
+          await fetchData();
+          setStatusMsg(`✅ Liste des élèves importée ! (${count} ajoutés)`);
+        } catch (err) { console.error(err); setStatusMsg('❌ Erreur Import élèves.'); }
+      }
     });
   };
 
-  return (
-    <div className="flex items-center gap-2">
-      <button onClick={() => studentsRef.current?.click()} className="px-3 py-1.5 border border-slate-200 bg-white text-xs font-medium rounded hover:bg-slate-50">
-        Import Élèves
-      </button>
-      <input type="file" ref={studentsRef} accept=".csv" className="hidden" onChange={(e) => handleFileUpload(e, 'students')} />
+  const handleCompetenceCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setStatusMsg('🚀 Analyse de la progression...');
 
-      <button onClick={() => competencesRef.current?.click()} className="px-3 py-1.5 border border-slate-200 bg-white text-xs font-medium rounded hover:bg-slate-50">
-        Import Compétences
-      </button>
-      <input type="file" ref={competencesRef} accept=".csv" className="hidden" onChange={(e) => handleFileUpload(e, 'competences')} />
-    </div>
-  );
-}
-
-// --- Component: SaisieView ---
-function SaisieView({ students, competences, results, onUpsert }: { students: Student[], competences: Competence[], results: ResultsMap, onUpsert: any }) {
-  const headerScrollRef = useRef<HTMLDivElement>(null);
-  const rowsScrollRefs = useRef<(HTMLDivElement | null)[]>([]);
-
-  const handleScroll = (scrollLeft: number) => {
-    if (headerScrollRef.current) headerScrollRef.current.scrollLeft = scrollLeft;
-    rowsScrollRefs.current.forEach((ref) => { if (ref) ref.scrollLeft = scrollLeft; });
+    Papa.parse(file, {
+       header: true,
+       skipEmptyLines: true,
+       complete: async (resultsBlock) => {
+         try {
+           const lines = resultsBlock.data as Record<string, string>[];
+           let count = 0;
+           for (const row of lines) {
+             await fetch('/api/upsert', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({
+                 type: 'competence',
+                 data: row
+               })
+             });
+             count++;
+           }
+           await fetchData();
+           setStatusMsg(`✅ Progression complète importée ! (${count} rubriques)`);
+         } catch (err) { console.error(err); setStatusMsg('❌ Erreur Progression'); }
+       }
+    });
   };
 
-  const getStatusText = (successCount: number) => {
-    if (successCount < 3) return ' (NA)';
-    if (successCount <= 4) return ' (PA)';
-    return ' (A)';
+  const handleAddStudent = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    const fName = data.get('firstName') as string;
+    const lName = data.get('lastName') as string;
+    const grade = data.get('grade') as string;
+    if (!fName || !lName || !grade) return;
+    try {
+      await fetch('/api/upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'student',
+          data: { firstName: fName, lastName: lName, grade }
+        })
+      });
+      await fetchData();
+      setStatusMsg('✅ Élève ajouté !');
+      (e.target as HTMLFormElement).reset();
+    } catch(err) { console.error(err); }
   };
 
-  const getStatusColorClass = (successCount: number, isTaught: boolean) => {
-    if (!isTaught) return 'bg-slate-100';
-    if (successCount < 3) return 'bg-rose-50';
-    if (successCount <= 4) return 'bg-amber-50';
-    return 'bg-emerald-50';
+  const confirmClear = async (table: string, title: string) => {
+    if (confirm(`⚠️ Vider entièrement les ${title} ? Action irréversible.`)) {
+      try {
+        // TODO: Créer une route API pour le DELETE.
+        // ex: await fetch('/api/delete', { method: 'POST', body: JSON.stringify({ table }) })
+        setStatusMsg(`🧹 Demande de vidage envoyée pour ${title}. (Fonction API à implémenter)`);
+      } catch (e) {
+        console.error(e);
+      }
+    }
   };
 
-  const getStatusTextColorClass = (successCount: number) => {
-    if (successCount < 3) return 'text-rose-700';
-    if (successCount <= 4) return 'text-amber-700';
-    return 'text-emerald-700';
-  };
+  // --- Derived Data for UI ---
+  const activeStudents = useMemo(() => students.filter(s => !s.isArchived), [students]);
 
-  return (
-    <main className="flex-1 bg-slate-100 relative overflow-hidden flex">
-      <div className="absolute inset-0 flex flex-col">
-        <div className="flex bg-slate-200 border-b border-slate-300 pointer-events-auto">
-          <div className="w-48 bg-slate-300 p-3 flex-shrink-0 font-bold text-[11px] text-slate-700 border-r border-slate-400 flex items-center">
-            LISTE DES ÉLÈVES
-          </div>
-          <div className="flex-1 flex overflow-x-auto no-scrollbar pointer-events-auto" ref={headerScrollRef} onScroll={(e) => handleScroll((e.target as HTMLDivElement).scrollLeft)}>
-            {competences.map((comp) => (
-              <div key={comp.id} className="flex-shrink-0 w-32 border-r border-slate-300 p-2 text-center flex flex-col justify-center">
-                <p className="text-[8px] text-slate-500 font-bold uppercase truncate" title={comp.domain}>{comp.domain}</p>
-                <p className="text-[10px] font-medium leading-tight" title={comp.title}>{comp.title.length > 25 ? comp.title.substring(0, 25) + '...' : comp.title}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+  const getCode = useCallback((c: Competence) => c.code || c.title.split(' : ')[0] || '', []);
+  const getGrade = useCallback((c: Competence) => c.grade || c.domain || '', []);
+  const getDomain = useCallback((c: Competence) => c.domain || '', []);
 
-       <div className="flex-1 flex flex-col overflow-y-auto pb-8">
-        {students.map((student, rowIndex) => (
-            <div key={student.id} className="flex border-b border-slate-200 bg-white group hover:bg-slate-50">
-              <div className="w-48 p-3 border-r border-slate-300 flex-shrink-0 font-medium text-xs flex items-center shadow-right z-10 relative">
-                <span className="truncate" title={`${student.lastName.toUpperCase()} ${student.firstName} (${student.grade})`}>
-                  {student.lastName.toUpperCase()} {student.firstName} <span className="text-slate-400 font-normal">({student.grade})</span>
-                </span>
-              </div>
-              <div className="flex-1 flex overflow-x-auto no-scrollbar" ref={el => rowsScrollRefs.current[rowIndex] = el} onScroll={(e) => handleScroll((e.target as HTMLDivElement).scrollLeft)}>
-                {competences.map((comp) => {
-                  const result = results[student.id]?.[comp.id] || { successCount: 0, isTaught: false };
-                  const isTaught = result.isTaught;
-                  const successCount = result.successCount;
+  // Saisie View 
+  const filteredStudents = useMemo(() => {
+    let filtered = students;
+    if (filterGrade !== 'all') filtered = filtered.filter(s => s.grade === filterGrade);
+    return filtered.sort((a,b) => (a.isArchived === b.isArchived) ? 0 : a.isArchived ? 1 : -1);
+  }, [students, filterGrade]);
 
-                  return (
-                    <div key={comp.id} className={cn("flex-shrink-0 w-32 border-r border-slate-200 p-1 flex flex-col items-center justify-center transition-colors", getStatusColorClass(successCount, isTaught))}>
-                      {isTaught ? (
-                        <>
-                          <span className={cn("text-[9px] font-bold", getStatusTextColorClass(successCount))}>
-                            {successCount}/10 {getStatusText(successCount)}
-                          </span>
-                          <div className="flex gap-1 mt-1">
-                            <button onClick={() => onUpsert(student.id, comp.id, { successCount: Math.max(0, successCount - 1), isTaught: true })} disabled={successCount <= 0} className="w-5 h-5 bg-white border border-slate-200 rounded flex items-center justify-center text-[10px] hover:bg-slate-100 disabled:opacity-50 cursor-pointer">-</button>
-                            <button onClick={() => onUpsert(student.id, comp.id, { successCount: Math.min(10, successCount + 1), isTaught: true })} disabled={successCount >= 10} className="w-5 h-5 bg-white border border-slate-200 rounded flex items-center justify-center text-[10px] hover:bg-slate-100 disabled:opacity-50 cursor-pointer">+</button>
-                          </div>
-                          <div className="mt-1 flex gap-1 items-center">
-                            <input type="checkbox" checked={isTaught} onChange={(e) => onUpsert(student.id, comp.id, { isTaught: e.target.checked, successCount })} className="w-2.5 h-2.5 accent-indigo-600 rounded cursor-pointer" title="Désactiver cette notion" />
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-6 h-3 bg-slate-300 rounded-full relative cursor-pointer" onClick={() => onUpsert(student.id, comp.id, { isTaught: true, successCount })}>
-                            <div className="w-2 h-2 bg-white rounded-full absolute top-0.5 left-0.5 shadow-sm"></div>
-                          </div>
-                          <span className="text-[8px] mt-1 text-slate-400">Non-ens.</span>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-          {students.length > 0 && (
-            <div className="mt-auto bg-white border-t border-slate-300 p-2 flex items-center justify-between sticky bottom-0 z-10 w-full">
-              <p className="text-[10px] text-slate-500">Affichage : {students.length} élèves</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </main>
-  );
-}
+  const { uniqueCompGrades, codes } = useMemo(() => {
+    let filtered = competences;
+    if (filterGrade !== 'all') filtered = filtered.filter(c => getGrade(c) === filterGrade);
+    if (filterDomain !== 'all') filtered = filtered.filter(c => getDomain(c) === filterDomain || c.subDomain === filterDomain);
+    if (filterSubDomain !== 'all') filtered = filtered.filter(c => getCode(c) === filterSubDomain);
 
-// --- Main App Component ---
-export default function App() {
-  const { students, competences, results, loading, upsertResult, importStudents, importCompetences } = useTrackingData();
-  const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage'>('saisie');
+    const grades = Array.from(new Set(competences.map(c => getGrade(c)).filter(Boolean))).sort((a,b) => String(a).localeCompare(String(b)));
+    const allCodes = Array.from(new Set(filtered.map(c => getCode(c)).filter(Boolean)));
+    const sortedCodes = allCodes.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
 
-  const { overallAverage, validRate, activeCompetencesCount } = useMemo(() => {
-    let totalScore = 0;
-    let scoresCount = 0;
-    let validScoresCount = 0;
-    const activeComps = new Set<string>();
+    return { uniqueCompGrades: grades, codes: sortedCodes };
+  }, [competences, filterGrade, filterDomain, filterSubDomain, getCode, getGrade, getDomain]);
 
-    students.forEach(student => {
-      competences.forEach(comp => {
-        const res = results[student.id]?.[comp.id];
-        if (res && res.isTaught) {
-          totalScore += res.successCount;
-          scoresCount++;
-          if (res.successCount >= 5) validScoresCount++;
-          activeComps.add(comp.id);
+  const uniqueGrades = Array.from(new Set(students.map(s => s.grade))).sort();
+  const uniqueDomains = Array.from(new Set(competences.map(c => getDomain(c) || c.subDomain).filter(Boolean))).sort();
+  const uniqueSubCategories = Array.from(new Set(competences.map(c => getCode(c)).filter(Boolean))).sort();
+  const scoreOptions = Array.from({length: 11}, (_, i) => i);
+
+  // Pilotage View
+  const { averages, activeComps } = useMemo(() => {
+    let activeCompsCount = 0;
+    const compsAvg = competences.map(comp => {
+      let total = 0, count = 0;
+      activeStudents.forEach(s => {
+        if (results[s.id]?.[comp.id]?.isStarted) {
+          total += results[s.id][comp.id].score;
+          count++;
         }
       });
+      if (count > 0) activeCompsCount++;
+      return { ...comp, avg: count > 0 ? (total / count) : null };
     });
-
-    return {
-      overallAverage: scoresCount > 0 ? (totalScore / scoresCount).toFixed(1) : '0.0',
-      validRate: scoresCount > 0 ? Math.round((validScoresCount / scoresCount) * 100) : 0,
-      activeCompetencesCount: activeComps.size,
-    };
-  }, [students, competences, results]);
+    return { averages: compsAvg.filter(c => c.avg !== null), activeComps: activeCompsCount };
+  }, [competences, activeStudents, results]);
 
   if (loading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-          <p className="text-slate-500 font-medium">Connexion à Neon PostgreSQL en cours...</p>
-        </div>
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
       </div>
     );
   }
 
+  // Column Metrics Reference
+  const codeColWidth = 140;
+  const titleColWidth = 220;
+
   return (
-    <div className="flex flex-col h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden">
-      <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-200 shadow-sm shrink-0 z-10">
-        <div className="flex items-center gap-4">
-          <div className="bg-indigo-600 p-2 rounded-lg">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+    <div className="flex flex-col h-screen bg-slate-50 font-sans text-slate-900">
+      {/* HEADER */}
+      <header className="bg-indigo-700 text-white shadow-md z-50 shrink-0">
+        <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-3">
+          <div className="flex items-center gap-3">
+            <BookOpen className="w-6 h-6 text-indigo-200" />
+            <h1 className="text-xl font-bold tracking-tight">Suivi Elèves - Julie Carnis-Bréart</h1>
           </div>
-          <div>
-            <h1 className="text-sm font-bold tracking-tight uppercase">Suivi Pédagogique</h1>
-            <p className="text-[10px] text-slate-400">Neon DB: Connected • Temps Réel</p>
+          <div className="flex gap-1 overflow-x-auto">
+            <button onClick={() => setActiveTab('saisie')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'saisie' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+              <BookOpen className="w-4 h-4" /> Saisie des notes
+            </button>
+            <button onClick={() => setActiveTab('pilotage')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'pilotage' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+              <BarChart2 className="w-4 h-4" /> Pilotage
+            </button>
+            <button onClick={() => setActiveTab('admin')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'admin' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+              <Settings className="w-4 h-4" /> Admin
+            </button>
           </div>
-        </div>
-
-        <div className="flex bg-slate-100 p-1 rounded-md">
-          <button onClick={() => setActiveTab('saisie')} className={cn("px-4 py-1.5 text-xs font-semibold rounded shadow-sm transition-colors", activeTab === 'saisie' ? "bg-white text-indigo-600" : "text-slate-500 hover:text-slate-700 font-medium bg-transparent shadow-none")}>
-            Mode Saisie
-          </button>
-          <button onClick={() => setActiveTab('pilotage')} className={cn("px-4 py-1.5 text-xs font-semibold rounded shadow-sm transition-colors", activeTab === 'pilotage' ? "bg-white text-indigo-600" : "text-slate-500 hover:text-slate-700 font-medium bg-transparent shadow-none")}>
-            Pilotage
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <CSVImport onImportStudents={importStudents} onImportCompetences={importCompetences} />
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-64 border-r border-slate-200 bg-white flex flex-col shrink-0">
-          <div className="p-4 border-b border-slate-100">
-            <input type="text" placeholder="Rechercher un élève..." className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-          </div>
-          <div className="flex-1 p-4">
-            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Indicateurs de Pilotage</h3>
-            <div className="space-y-4">
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <p className="text-[10px] text-slate-500 mb-1">Moyenne Générale (Activé)</p>
-                <p className="text-2xl font-bold text-slate-900">{overallAverage}<span className="text-sm text-slate-400 font-normal ml-1">/10</span></p>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <p className="text-[10px] text-slate-500 mb-1">Taux de Validation (A)</p>
-                <p className="text-2xl font-bold text-slate-900">{validRate}<span className="text-sm text-slate-400 font-normal ml-1">%</span></p>
-              </div>
+      {/* TABS */}
+      {activeTab === 'saisie' && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Filters Bar */}
+          <div className="bg-white border-b border-slate-200 p-3 flex items-center gap-4 shrink-0 overflow-x-auto shadow-sm z-40">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Niveau (Élèves)</label>
+              <select value={filterGrade} onChange={e => setFilterGrade(e.target.value)} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
+                <option value="all">Tous (Cohorte)</option>
+                {uniqueGrades.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div className="w-px h-6 bg-slate-300 mx-2"></div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-slate-600">Domaine</label>
+              <select value={filterDomain} onChange={e => {setFilterDomain(e.target.value); setFilterSubDomain('all');}} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
+                <option value="all">Tous</option>
+                {uniqueDomains.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-slate-600">Sous-domaine</label>
+              <select value={filterSubDomain} onChange={e => setFilterSubDomain(e.target.value)} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500" disabled={filterDomain === 'all'}>
+                 <option value="all">Tous</option>
+                 {uniqueSubCategories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
           </div>
-        </aside>
 
-        {activeTab === 'saisie' ? (
-          <SaisieView students={students} competences={competences} results={results} onUpsert={upsertResult} />
-        ) : (
-          <div className="flex-1 p-8 overflow-auto bg-slate-100">
-            <div className="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-sm border border-slate-200">
-              <h2 className="text-xl font-bold tracking-tight mb-2">Pilotage : Analyses des compétences</h2>
-              <p className="text-sm text-slate-500 mb-6">Moyennes de réussite sur les notions actives</p>
-              {activeCompetencesCount === 0 ? (
-                <p className="text-center text-slate-500 py-12">Aucune donnée à afficher. Activez des notions.</p>
-              ) : (
-                <div className="space-y-4">
-                  {competences.map(comp => {
-                    let total = 0, count = 0;
-                    students.forEach(s => {
-                      if (results[s.id]?.[comp.id]?.isTaught) {
-                        total += results[s.id][comp.id].successCount;
-                        count++;
-                      }
-                    });
-                    if (count === 0) return null;
-                    const avg = total / count;
-                    return (
-                      <div key={comp.id} className="flex flex-col gap-1">
-                        <div className="flex justify-between text-xs font-medium">
-                          <span>{comp.domain} › {comp.title}</span>
-                          <span className={avg >= 5 ? 'text-emerald-600' : 'text-rose-600'}>{avg.toFixed(1)}/10</span>
+          {/* Table Container */}
+          <div className="flex-1 flex overflow-auto relative">
+            <table className="w-max text-left border-separate border-spacing-0">
+              <thead className="bg-slate-200 z-30 sticky top-0">
+                <tr>
+                   <th 
+                     style={{ left: 0, width: codeColWidth }}
+                     className="sticky bg-slate-300 p-2 border-r border-b border-slate-400 z-40 align-bottom font-bold text-[11px] uppercase text-slate-700">
+                     Code
+                   </th>
+                   {uniqueCompGrades.map((g, i) => (
+                     <th 
+                       key={g || i} 
+                       style={{ left: codeColWidth + (i * titleColWidth), width: titleColWidth }}
+                       className={cn(
+                         "sticky bg-slate-200 p-2 border-r border-b border-slate-300 z-40 align-bottom font-bold text-[10px] uppercase text-slate-600",
+                         i === uniqueCompGrades.length - 1 && "shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]"
+                       )}>
+                       Titre {g}
+                     </th>
+                   ))}
+                   
+                   {filteredStudents.map(student => (
+                     <th key={student.id} className={cn(
+                       "p-2 border-r border-b border-slate-300 align-bottom bg-slate-100 min-w-[100px] w-32 relative text-center",
+                       student.isArchived && "opacity-60 bg-slate-200"
+                     )}>
+                        <div className="flex flex-col items-center justify-end h-full">
+                           {student.isArchived && <UserX className="w-4 h-4 text-slate-400 mb-1" />}
+                           <p className={cn("text-[11px] font-bold uppercase", student.isArchived ? "text-slate-400 line-through" : "text-slate-800")}>{student.lastName}</p>
+                           <p className="text-xs font-semibold text-slate-600 truncate max-w-full">{student.firstName}</p>
+                           <p className="text-[10px] text-slate-500 mt-0.5">{student.grade}</p>
                         </div>
-                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                          <div className={cn("h-full", avg >= 5 ? "bg-emerald-500" : "bg-rose-500")} style={{ width: `${(avg / 10) * 100}%` }}></div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+                        <label className="absolute top-1 right-1 flex items-center cursor-pointer" title="Archiver / Réveiller élève">
+                           <input type="checkbox" className="sr-only" checked={student.isArchived} onChange={e => toggleArchiveStudent(student.id, e.target.checked)} />
+                           <div className={cn("w-6 h-3 rounded-full transition flex items-center px-0.5", student.isArchived ? 'bg-indigo-400' : 'bg-slate-300')}>
+                             <div className={cn("bg-white w-2 h-2 rounded-full shadow-sm transform transition", student.isArchived && 'translate-x-3')}></div>
+                           </div>
+                        </label>
+                     </th>
+                   ))}
+                </tr>
+              </thead>
+              <tbody>
+                {codes.map(code => {
+                  const matchingComps = competences.filter(c => getCode(c) === code);
+                  let isCodeStarted = false;
+                  for (const s of students) {
+                     for (const c of matchingComps) {
+                        if (results[s.id]?.[c.id]?.isStarted) {
+                           isCodeStarted = true;
+                           break;
+                        }
+                     }
+                     if (isCodeStarted) break;
+                  }
+
+                  return (
+                    <tr key={code} className="hover:bg-slate-50 transition border-b border-slate-200 group">
+                      <td 
+                        style={{ left: 0, width: codeColWidth }}
+                        className="sticky bg-white group-hover:bg-slate-50 p-2 border-r border-b border-slate-200 z-10 align-middle">
+                         <div className="flex items-center justify-between">
+                           <span className="font-bold text-slate-700 text-xs truncate mr-2" title={code}>{code}</span>
+                           <button 
+                             onClick={() => startCompetencesForCode(matchingComps, !isCodeStarted)}
+                             title="Activer cette compétence pour tous"
+                             className={cn("p-1.5 border shadow-sm rounded-full transition shrink-0", isCodeStarted ? "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200" : "bg-white text-slate-400 border-slate-300 hover:text-indigo-500 hover:border-indigo-300")}
+                            >
+                             <Power className="w-3 h-3" />
+                           </button>
+                         </div>
+                      </td>
+                      
+                      {uniqueCompGrades.map((g, i) => {
+                        const compForGrade = matchingComps.find(c => getGrade(c) === g);
+                        const isLast = i === uniqueCompGrades.length - 1;
+                        let displayTitle = '-';
+                        if (compForGrade) {
+                           displayTitle = compForGrade.title;
+                           if (displayTitle.includes(' : ')) {
+                              displayTitle = displayTitle.split(' : ').slice(1).join(' : ');
+                           }
+                        }
+                        
+                        return (
+                          <td 
+                            key={g || i} 
+                            style={{ left: codeColWidth + (i * titleColWidth), width: titleColWidth }}
+                            className={cn("sticky bg-white group-hover:bg-slate-50 p-2 border-r border-b border-slate-200 z-10 align-middle text-[11px] leading-tight text-slate-600", isLast && "shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]")}
+                            title={compForGrade ? compForGrade.title : ''}
+                          >
+                             {compForGrade ? displayTitle : <span className="text-slate-300 italic">-</span>}
+                          </td>
+                        );
+                      })}
+
+                      {filteredStudents.map(student => {
+                         const comp = matchingComps.find(c => getGrade(c) === student.grade);
+                         if (!comp) {
+                            return (
+                              <td key={student.id} className="p-2 border-r border-b border-slate-200 bg-slate-100/30 align-middle text-center">
+                                 <span className="text-[10px] text-slate-300 font-medium">Non dispo</span>
+                              </td>
+                            );
+                         }
+
+                         const result = results[student.id]?.[comp.id] || { score: 0, isStarted: false };
+                         const score = result.score;
+                         
+                         if (!isCodeStarted) {
+                            return (
+                              <td key={student.id} className="p-2 border-r border-b border-slate-200 align-middle text-center bg-slate-50 opacity-50">
+                                 <span className="text-[10px] text-slate-400">-</span>
+                              </td>
+                            );
+                         }
+
+                         return (
+                            <td key={student.id} className={cn("p-1.5 border-r border-b border-slate-200 align-middle text-center transition", getScoreColor(score, true), student.isArchived && "opacity-60")}>
+                               <select 
+                                 value={score}
+                                 onChange={(e) => upsertResult(student.id, comp.id, { score: Number(e.target.value), isStarted: true })}
+                                 className={cn("bg-white border text-sm rounded block w-full p-1 font-bold shadow-sm cursor-pointer focus:ring-2 focus:ring-indigo-500 text-center text-center-last appearance-none", score >= 5 ? "border-emerald-300 text-emerald-700" : score >= 3 ? "border-amber-300 text-amber-700" : "border-rose-300 text-rose-700")}
+                               >
+                                 {scoreOptions.map(n => <option key={n} value={n}>{n} / 10</option>)}
+                               </select>
+                            </td>
+                         );
+                      })}
+                    </tr>
+                  );
+                })}
+                
+                {codes.length === 0 && (
+                  <tr>
+                    <td colSpan={1 + uniqueCompGrades.length + filteredStudents.length} className="text-center p-8 text-slate-500 bg-white">
+                      Aucune compétence trouvée. Importez la progression.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="bg-white border-t border-slate-300 p-2 flex items-center justify-between shrink-0 shadow-sm z-40">
+            <p className="text-[10px] font-bold text-slate-500">
+               {codes.length} codes affichés | {filteredStudents.length} élèves
+            </p>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'pilotage' && (
+        <div className="flex-1 p-6 overflow-auto">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <h2 className="text-xl font-bold text-slate-800 tracking-tight">Analyse de la cohorte</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                 <p className="text-sm font-medium text-slate-500 mb-1">Élèves Actifs</p>
+                 <p className="text-3xl font-bold text-indigo-700">{activeStudents.length}</p>
+                 <p className="text-xs text-slate-400 mt-2">{students.length - activeStudents.length} archivés</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                 <p className="text-sm font-medium text-slate-500 mb-1">Compétences Démarrées</p>
+                 <p className="text-3xl font-bold text-emerald-600">{activeComps}</p>
+                 <p className="text-xs text-slate-400 mt-2">Sur {competences.length} au total</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                 <p className="text-sm font-medium text-slate-500 mb-1">Niveaux</p>
+                 <div className="flex flex-wrap gap-2 mt-2">
+                   {uniqueGrades.map(g => (
+                     <span key={g} className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-semibold">{g}</span>
+                   ))}
+                 </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                 <h3 className="font-semibold text-slate-800">Résultats moyens par compétence</h3>
+              </div>
+              <ul className="divide-y divide-slate-100 max-h-96 overflow-auto">
+                {averages.length === 0 ? (
+                  <li className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée.</li>
+                ) : (
+                  averages.sort((a,b) => (b.avg as number) - (a.avg as number)).map(c => (
+                    <li key={c.id} className="p-4 hover:bg-slate-50 transition flex items-center justify-between">
+                       <div>
+                         <p className="text-xs font-bold text-slate-500 uppercase mb-0.5">{getDomain(c)} • {c.subDomain}</p>
+                         <p className="text-sm font-semibold text-slate-800">{c.title}</p>
+                       </div>
+                       <div className="flex items-center gap-4">
+                          <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
+                             <div className={cn("h-full rounded-full", (c.avg as number) >= 5 ? 'bg-emerald-500' : (c.avg as number) >= 3 ? 'bg-amber-400' : 'bg-rose-500')} style={{ width: `${((c.avg as number) / 10) * 100}%` }}></div>
+                          </div>
+                          <span className={cn("text-lg font-bold min-w-[3rem] text-right", (c.avg as number) >= 5 ? 'text-emerald-700' : (c.avg as number) >= 3 ? 'text-amber-600' : 'text-rose-600')}>
+                            {(c.avg as number).toFixed(1)}
+                          </span>
+                       </div>
+                    </li>
+                  ))
+                )}
+              </ul>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="absolute bottom-4 right-4 bg-slate-900 text-white px-3 py-2 rounded-full text-[10px] font-bold shadow-xl flex items-center gap-2">
-        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-        Mise à jour Neon PostgreSQL (Temps Réel)
-      </div>
+      {activeTab === 'admin' && (
+        <div className="flex-1 p-6 overflow-auto bg-slate-100">
+          <div className="max-w-3xl mx-auto space-y-6">
+            
+            {statusMsg && (
+              <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 px-4 py-3 rounded-lg shadow-sm font-medium flex items-center gap-3">
+                <ShieldAlert className="w-5 h-5" />
+                {statusMsg}
+              </div>
+            )}
+            
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+               <div className="p-5 border-b border-slate-200 bg-slate-50">
+                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                   <Upload className="w-5 h-5 text-indigo-500" /> Imports CSV
+                 </h2>
+               </div>
+               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="border border-slate-200 rounded-lg p-5 hover:border-indigo-300 hover:shadow-md transition">
+                    <h3 className="font-semibold mb-2">1. Liste des Élèves</h3>
+                    <p className="text-xs text-slate-500 mb-4 h-12">Format objet direct depuis en-têtes</p>
+                    <label className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-2 px-4 rounded shadow block text-center transition">
+                      Sélectionner le fichier
+                      <input type="file" accept=".csv" className="hidden" onChange={handleStudentCSV} />
+                    </label>
+                 </div>
+                 <div className="border border-slate-200 rounded-lg p-5 hover:border-indigo-300 hover:shadow-md transition">
+                    <h3 className="font-semibold mb-2">2. Progression Cycle</h3>
+                    <p className="text-xs text-slate-500 mb-4 h-12">Format: code, domain, subDomain, title, grade</p>
+                    <label className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold py-2 px-4 rounded shadow block text-center transition">
+                      Sélectionner le fichier
+                      <input type="file" accept=".csv" className="hidden" onChange={handleCompetenceCSV} />
+                    </label>
+                 </div>
+               </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+               <div className="p-5 border-b border-slate-200 bg-slate-50">
+                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                   <PlusCircle className="w-5 h-5 text-emerald-500" /> Ajouter Élève Manuellement
+                 </h2>
+               </div>
+               <form onSubmit={handleAddStudent} className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                     <div>
+                       <label className="block text-xs font-semibold text-slate-600 mb-1">Prénom</label>
+                       <input name="firstName" type="text" required className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="Jean" />
+                     </div>
+                     <div>
+                       <label className="block text-xs font-semibold text-slate-600 mb-1">Nom</label>
+                       <input name="lastName" type="text" required className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="Dupont" />
+                     </div>
+                     <div>
+                       <label className="block text-xs font-semibold text-slate-600 mb-1">Niveau</label>
+                       <select name="grade" required className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 text-sm bg-white">
+                          <option value="CE1">CE1</option>
+                          <option value="CE2">CE2</option>
+                          <option value="CM1">CM1</option>
+                          <option value="CM2">CM2</option>
+                       </select>
+                     </div>
+                  </div>
+                  <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-6 rounded shadow-sm transition text-sm">
+                    Ajouter
+                  </button>
+               </form>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+               <div className="p-5 border-b border-rose-100 bg-rose-50">
+                 <h2 className="text-lg font-bold text-rose-800 flex items-center gap-2">
+                   <Trash2 className="w-5 h-5" /> Zone Danger (Remise à Zéro)
+                 </h2>
+               </div>
+               <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                 <button onClick={() => confirmClear('Student', 'élèves')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-semibold py-2 px-4 rounded text-sm transition">
+                   Vider Élèves
+                 </button>
+                 <button onClick={() => confirmClear('Competence', 'compétences')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-semibold py-2 px-4 rounded text-sm transition">
+                   Vider Progression
+                 </button>
+                 <button onClick={() => confirmClear('Result', 'toutes les notes')} className="bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2 px-4 rounded shadow text-sm transition">
+                   Purger Notes
+                 </button>
+               </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+      
+      {/* Global CSS injected directly */}
+      <style>{`
+        .text-center-last {
+          text-align-last: center;
+        }
+        select {
+          -moz-appearance: none;
+          -webkit-appearance: none;
+        }
+      `}</style>
     </div>
   );
 }
