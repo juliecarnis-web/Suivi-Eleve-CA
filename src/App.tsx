@@ -298,18 +298,22 @@ export default function App() {
     let filtered = competences;
     if (filterGrade !== 'all') filtered = filtered.filter(c => getGrade(c) === filterGrade);
     if (filterDomain !== 'all') filtered = filtered.filter(c => getDomain(c) === filterDomain || c.subDomain === filterDomain);
-    if (filterSubDomain !== 'all') filtered = filtered.filter(c => getCode(c) === filterSubDomain);
+    if (filterSubDomain !== 'all') filtered = filtered.filter(c => c.subDomain === filterSubDomain);
 
-    const grades = Array.from(new Set(competences.map(c => getGrade(c)).filter(Boolean))).sort((a,b) => String(a).localeCompare(String(b)));
+    const grades = Array.from(new Set(competences.map(c => getGrade(c)).filter(Boolean)));
     const allCodes = Array.from(new Set(filtered.map(c => getCode(c)).filter(Boolean)));
-    const sortedCodes = allCodes.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
 
-    return { uniqueCompGrades: grades, codes: sortedCodes };
+    return { uniqueCompGrades: grades, codes: allCodes };
   }, [competences, filterGrade, filterDomain, filterSubDomain, getCode, getGrade, getDomain]);
 
-  const uniqueGrades = Array.from(new Set(students.map(s => s.grade))).sort();
-  const uniqueDomains = Array.from(new Set(competences.map(c => getDomain(c) || c.subDomain).filter(Boolean))).sort();
-  const uniqueSubCategories = Array.from(new Set(competences.map(c => getCode(c)).filter(Boolean))).sort();
+  const uniqueGrades = Array.from(new Set(students.map(s => s.grade)));
+  const uniqueDomains = Array.from(new Set(competences.map(c => getDomain(c)).filter(Boolean)));
+  const uniqueSubCategories = Array.from(new Set(
+    competences
+      .filter(c => filterDomain === 'all' || getDomain(c) === filterDomain)
+      .map(c => c.subDomain)
+      .filter(Boolean)
+  ));
   const scoreOptions = Array.from({length: 11}, (_, i) => i);
 
   // Pilotage View
@@ -396,11 +400,11 @@ export default function App() {
           {/* Table Container */}
           <div className="flex-1 flex overflow-auto relative">
             <table className="w-max text-left border-separate border-spacing-0">
-              <thead className="bg-slate-200 z-30 sticky top-0">
+              <thead className="bg-slate-200 z-40 sticky top-0 shadow-sm">
                 <tr>
                    <th 
                      style={{ left: 0, width: codeColWidth }}
-                     className="sticky bg-slate-300 p-2 border-r border-b border-slate-400 z-40 align-bottom font-bold text-[11px] uppercase text-slate-700">
+                     className="sticky top-0 bg-slate-300 p-2 border-r border-b border-slate-400 z-50 align-bottom font-bold text-[11px] uppercase text-slate-700">
                      Code
                    </th>
                    {uniqueCompGrades.map((g, i) => (
@@ -408,7 +412,7 @@ export default function App() {
                        key={g || i} 
                        style={{ left: codeColWidth + (i * titleColWidth), width: titleColWidth }}
                        className={cn(
-                         "sticky bg-slate-200 p-2 border-r border-b border-slate-300 z-40 align-bottom font-bold text-[10px] uppercase text-slate-600",
+                         "sticky top-0 bg-slate-200 p-2 border-r border-b border-slate-300 z-50 align-bottom font-bold text-[10px] uppercase text-slate-600",
                          i === uniqueCompGrades.length - 1 && "shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]"
                        )}>
                        Titre {g}
@@ -417,7 +421,7 @@ export default function App() {
                    
                    {filteredStudents.map(student => (
                      <th key={student.id} className={cn(
-                       "p-2 border-r border-b border-slate-300 align-bottom bg-slate-100 min-w-[100px] w-32 relative text-center",
+                       "p-2 border-r border-b border-slate-300 align-bottom bg-slate-100 min-w-[100px] w-32 relative text-center z-40 sticky top-0",
                        student.isArchived && "opacity-60 bg-slate-200"
                      )}>
                         <div className="flex flex-col items-center justify-end h-full">
@@ -454,7 +458,7 @@ export default function App() {
                     <tr key={code} className="hover:bg-slate-50 transition border-b border-slate-200 group">
                       <td 
                         style={{ left: 0, width: codeColWidth }}
-                        className="sticky bg-white group-hover:bg-slate-50 p-2 border-r border-b border-slate-200 z-10 align-middle">
+                        className="sticky bg-white group-hover:bg-slate-50 p-2 border-r border-b border-slate-200 z-30 align-middle">
                          <div className="flex items-center justify-between">
                            <span className="font-bold text-slate-700 text-xs truncate mr-2" title={code}>{code}</span>
                            <button 
@@ -482,7 +486,7 @@ export default function App() {
                           <td 
                             key={g || i} 
                             style={{ left: codeColWidth + (i * titleColWidth), width: titleColWidth }}
-                            className={cn("sticky bg-white group-hover:bg-slate-50 p-2 border-r border-b border-slate-200 z-10 align-middle text-[11px] leading-tight text-slate-600", isLast && "shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]")}
+                            className={cn("sticky bg-white group-hover:bg-slate-50 p-2 border-r border-b border-slate-200 z-30 align-middle text-[11px] leading-tight text-slate-600", isLast && "shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]")}
                             title={compForGrade ? compForGrade.title : ''}
                           >
                              {compForGrade ? displayTitle : <span className="text-slate-300 italic">-</span>}
