@@ -301,7 +301,7 @@ export default function App() {
     if (filterSubDomain !== 'all') filtered = filtered.filter(c => c.subDomain === filterSubDomain);
 
     const grades = Array.from(new Set(competences.map(c => getGrade(c)).filter(Boolean)));
-    const allCodes = Array.from(new Set(filtered.map(c => getCode(c)).filter(Boolean)))
+    const allCodes = Array.from(new Set(filtered.map(c => getCode(c)).filter(Boolean) as string[]))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
     return { uniqueCompGrades: grades, codes: allCodes };
@@ -424,21 +424,21 @@ export default function App() {
                    
                    {filteredStudents.map(student => (
                      <th key={student.id} className={cn(
-                       "p-2 border-r border-b border-slate-300 align-bottom bg-slate-100 min-w-[100px] w-32 relative text-center z-30 sticky top-0",
+                       "p-3 border-r border-b border-slate-300 align-bottom bg-slate-100 min-w-[100px] w-32 relative text-center z-30 sticky top-0",
                        student.isArchived && "opacity-60 bg-slate-200"
                      )}>
-                        <div className="flex flex-col items-center justify-end h-full">
-                           {student.isArchived && <UserX className="w-4 h-4 text-slate-400 mb-1" />}
+                        <div className="flex flex-col items-center justify-end h-full gap-1">
+                           <label className="flex items-center cursor-pointer mb-1" title="Archiver / Réveiller élève">
+                              <input type="checkbox" className="sr-only" checked={student.isArchived} onChange={e => toggleArchiveStudent(student.id, e.target.checked)} />
+                              <div className={cn("w-6 h-3 rounded-full transition flex items-center px-0.5", student.isArchived ? 'bg-indigo-400' : 'bg-slate-300')}>
+                                <div className={cn("bg-white w-2 h-2 rounded-full shadow-sm transform transition", student.isArchived && 'translate-x-3')}></div>
+                              </div>
+                           </label>
+                           {student.isArchived && <UserX className="w-4 h-4 text-slate-400" />}
                            <p className={cn("text-[11px] font-bold uppercase", student.isArchived ? "text-slate-400 line-through" : "text-slate-800")}>{student.lastName}</p>
                            <p className="text-xs font-semibold text-slate-600 truncate max-w-full">{student.firstName}</p>
-                           <p className="text-[10px] text-slate-500 mt-0.5">{student.grade}</p>
+                           <p className="text-[10px] text-slate-500">{student.grade}</p>
                         </div>
-                        <label className="absolute top-1 right-1 flex items-center cursor-pointer" title="Archiver / Réveiller élève">
-                           <input type="checkbox" className="sr-only" checked={student.isArchived} onChange={e => toggleArchiveStudent(student.id, e.target.checked)} />
-                           <div className={cn("w-6 h-3 rounded-full transition flex items-center px-0.5", student.isArchived ? 'bg-indigo-400' : 'bg-slate-300')}>
-                             <div className={cn("bg-white w-2 h-2 rounded-full shadow-sm transform transition", student.isArchived && 'translate-x-3')}></div>
-                           </div>
-                        </label>
                      </th>
                    ))}
                 </tr>
