@@ -390,7 +390,7 @@ export default function App() {
             </div>
             <div className="flex items-center gap-2">
               <label className="text-xs font-semibold text-slate-600">Sous-domaine</label>
-              <select value={filterSubDomain} onChange={e => setFilterSubDomain(e.target.value)} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500" disabled={filterDomain === 'all'}>
+              <select value={filterSubDomain} onChange={e => setFilterSubDomain(e.target.value)} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
                  <option value="all">Tous</option>
                  {uniqueSubCategories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -403,25 +403,27 @@ export default function App() {
               <thead className="bg-slate-200 z-40 sticky top-0 shadow-sm">
                 <tr>
                    <th 
-                     style={{ left: 0, width: codeColWidth }}
-                     className="sticky top-0 bg-slate-300 p-2 border-r border-b border-slate-400 z-50 align-bottom font-bold text-[11px] uppercase text-slate-700">
-                     Code
+                     colSpan={1 + uniqueCompGrades.length}
+                     className="sticky top-0 left-0 z-50 p-0 bg-slate-300 border-none shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] align-bottom">
+                     <div className="flex h-full items-stretch">
+                       <div className="w-[140px] shrink-0 p-2 border-r border-b border-slate-400 flex flex-col justify-end font-bold text-[11px] uppercase text-slate-700 text-left">
+                         Code
+                       </div>
+                       {uniqueCompGrades.map((g, i) => (
+                         <div 
+                           key={g || i} 
+                           className={cn(
+                             "w-[220px] shrink-0 bg-slate-200 p-2 border-r border-b border-slate-300 flex flex-col justify-end font-bold text-[10px] uppercase text-slate-600 text-left"
+                           )}>
+                           Titre {g}
+                         </div>
+                       ))}
+                     </div>
                    </th>
-                   {uniqueCompGrades.map((g, i) => (
-                     <th 
-                       key={g || i} 
-                       style={{ left: codeColWidth + (i * titleColWidth), width: titleColWidth }}
-                       className={cn(
-                         "sticky top-0 bg-slate-200 p-2 border-r border-b border-slate-300 z-50 align-bottom font-bold text-[10px] uppercase text-slate-600",
-                         i === uniqueCompGrades.length - 1 && "shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]"
-                       )}>
-                       Titre {g}
-                     </th>
-                   ))}
                    
                    {filteredStudents.map(student => (
                      <th key={student.id} className={cn(
-                       "p-2 border-r border-b border-slate-300 align-bottom bg-slate-100 min-w-[100px] w-32 relative text-center z-40 sticky top-0",
+                       "p-2 border-r border-b border-slate-300 align-bottom bg-slate-100 min-w-[100px] w-32 relative text-center z-30 sticky top-0",
                        student.isArchived && "opacity-60 bg-slate-200"
                      )}>
                         <div className="flex flex-col items-center justify-end h-full">
@@ -457,42 +459,43 @@ export default function App() {
                   return (
                     <tr key={code} className="hover:bg-slate-50 transition border-b border-slate-200 group">
                       <td 
-                        style={{ left: 0, width: codeColWidth }}
-                        className="sticky bg-white group-hover:bg-slate-50 p-2 border-r border-b border-slate-200 z-30 align-middle">
-                         <div className="flex items-center justify-between">
-                           <span className="font-bold text-slate-700 text-xs truncate mr-2" title={code}>{code}</span>
-                           <button 
-                             onClick={() => startCompetencesForCode(matchingComps, !isCodeStarted)}
-                             title="Activer cette compétence pour tous"
-                             className={cn("p-1.5 border shadow-sm rounded-full transition shrink-0", isCodeStarted ? "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200" : "bg-white text-slate-400 border-slate-300 hover:text-indigo-500 hover:border-indigo-300")}
-                            >
-                             <Power className="w-3 h-3" />
-                           </button>
+                        colSpan={1 + uniqueCompGrades.length}
+                        className="sticky left-0 z-40 p-0 bg-white group-hover:bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] border-none align-middle"
+                      >
+                         <div className="flex h-full items-stretch">
+                           <div className="w-[140px] shrink-0 p-2 border-r border-b border-slate-200 flex items-center justify-between bg-white group-hover:bg-slate-50">
+                             <span className="font-bold text-slate-700 text-xs truncate mr-2" title={code}>{code}</span>
+                             <button 
+                               onClick={() => startCompetencesForCode(matchingComps, !isCodeStarted)}
+                               title="Activer cette compétence pour tous"
+                               className={cn("p-1.5 border shadow-sm rounded-full transition shrink-0", isCodeStarted ? "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200" : "bg-white text-slate-400 border-slate-300 hover:text-indigo-500 hover:border-indigo-300")}
+                             >
+                               <Power className="w-3 h-3" />
+                             </button>
+                           </div>
+                           
+                           {uniqueCompGrades.map((g, i) => {
+                             const compForGrade = matchingComps.find(c => getGrade(c) === g);
+                             let displayTitle = '-';
+                             if (compForGrade) {
+                                displayTitle = compForGrade.title;
+                                if (displayTitle.includes(' : ')) {
+                                   displayTitle = displayTitle.split(' : ').slice(1).join(' : ');
+                                }
+                             }
+                             
+                             return (
+                               <div 
+                                 key={g || i} 
+                                 className="w-[220px] shrink-0 p-2 border-r border-b border-slate-200 flex items-center text-[11px] leading-tight text-slate-600 bg-white group-hover:bg-slate-50"
+                                 title={compForGrade ? compForGrade.title : ''}
+                               >
+                                  {compForGrade ? displayTitle : <span className="text-slate-300 italic">-</span>}
+                               </div>
+                             );
+                           })}
                          </div>
                       </td>
-                      
-                      {uniqueCompGrades.map((g, i) => {
-                        const compForGrade = matchingComps.find(c => getGrade(c) === g);
-                        const isLast = i === uniqueCompGrades.length - 1;
-                        let displayTitle = '-';
-                        if (compForGrade) {
-                           displayTitle = compForGrade.title;
-                           if (displayTitle.includes(' : ')) {
-                              displayTitle = displayTitle.split(' : ').slice(1).join(' : ');
-                           }
-                        }
-                        
-                        return (
-                          <td 
-                            key={g || i} 
-                            style={{ left: codeColWidth + (i * titleColWidth), width: titleColWidth }}
-                            className={cn("sticky bg-white group-hover:bg-slate-50 p-2 border-r border-b border-slate-200 z-30 align-middle text-[11px] leading-tight text-slate-600", isLast && "shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]")}
-                            title={compForGrade ? compForGrade.title : ''}
-                          >
-                             {compForGrade ? displayTitle : <span className="text-slate-300 italic">-</span>}
-                          </td>
-                        );
-                      })}
 
                       {filteredStudents.map(student => {
                          const comp = matchingComps.find(c => getGrade(c) === student.grade);
