@@ -7,7 +7,10 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'GET') {
     try {
       const students = await sql`SELECT * FROM "Student" ORDER BY "isArchived" ASC, "lastName" ASC`;
-      const competences = await sql`SELECT * FROM "Competence" ORDER BY "code" ASC`;
+      
+      // LA GREFFE EST ICI : On remplace "code" par id pour respecter l'ordre d'importation
+      const competences = await sql`SELECT * FROM "Competence" ORDER BY id ASC`;
+      
       const resultsRaw = await sql`SELECT * FROM "Result"`;
       
       const resultsMap: Record<string, Record<number, any>> = {};

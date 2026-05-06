@@ -55,6 +55,7 @@ export default function App() {
   const [filterSubDomain, setFilterSubDomain] = useState<string>('all');
 
   // Filters for Pilotage
+  const [pilotFilterGrade, setPilotFilterGrade] = useState<string>('all');
   const [pilotFilterDomain, setPilotFilterDomain] = useState<string>('all');
   const [pilotFilterSubDomain, setPilotFilterSubDomain] = useState<string>('all');
 
@@ -334,7 +335,9 @@ export default function App() {
       let green = 0, yellow = 0, red = 0, totalStarted = 0;
       let totalProgressionPercentage = 0;
       
-      activeStudents.forEach(s => {
+      const relevantStudents = activeStudents.filter(s => s.grade === getGrade(comp));
+      
+      relevantStudents.forEach(s => {
         const res = results[s.id]?.[comp.id];
         if (res && res.isStarted) {
           totalStarted++;
@@ -360,6 +363,7 @@ export default function App() {
     });
 
     let filtered = enhancedComps.filter(c => c.totalStarted > 0);
+    if (pilotFilterGrade !== 'all') filtered = filtered.filter(c => getGrade(c) === pilotFilterGrade);
     if (pilotFilterDomain !== 'all') filtered = filtered.filter(c => getDomain(c) === pilotFilterDomain || c.subDomain === pilotFilterDomain);
     if (pilotFilterSubDomain !== 'all') filtered = filtered.filter(c => c.subDomain === pilotFilterSubDomain);
 
@@ -373,7 +377,7 @@ export default function App() {
     });
 
     return { pilotageData: grouped, activeComps: activeCompsCount };
-  }, [competences, activeStudents, results, pilotFilterDomain, pilotFilterSubDomain, getDomain]);
+  }, [competences, activeStudents, results, pilotFilterGrade, pilotFilterDomain, pilotFilterSubDomain, getGrade, getDomain]);
 
   const pilotUniqueDomains = Array.from(new Set(competences.map(c => getDomain(c)).filter(Boolean)));
   const pilotUniqueSubCategories = Array.from(new Set(
@@ -607,6 +611,14 @@ export default function App() {
           {/* Filters Bar for Pilotage */}
           <div className="bg-white border-b border-slate-200 p-3 flex items-center gap-4 shrink-0 overflow-x-auto shadow-sm z-40">
             <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Niveau</label>
+              <select value={pilotFilterGrade} onChange={e => setPilotFilterGrade(e.target.value)} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
+                <option value="all">Tous (Cohorte)</option>
+                {uniqueGrades.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div className="w-px h-6 bg-slate-300 mx-2"></div>
+            <div className="flex items-center gap-2">
               <label className="text-xs font-semibold text-slate-600">Domaine</label>
               <select value={pilotFilterDomain} onChange={e => {setPilotFilterDomain(e.target.value); setPilotFilterSubDomain('all');}} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
                 <option value="all">Tous</option>
@@ -626,80 +638,88 @@ export default function App() {
             <div className="max-w-4xl mx-auto space-y-6">
               <h2 className="text-xl font-bold text-slate-800 tracking-tight">Analyse de la cohorte</h2>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                   <p className="text-sm font-medium text-slate-500 mb-1">Élèves Actifs</p>
-                   <p className="text-3xl font-bold text-indigo-700">{activeStudents.length}</p>
-                   <p className="text-xs text-slate-400 mt-2">{students.length - activeStudents.length} archivés</p>
+              {pilotFilterDomain === 'all' ? (
+                <div className="p-8 text-center bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500 font-medium">
+                  Veuillez sélectionner un domaine pour analyser les résultats.
                 </div>
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                   <p className="text-sm font-medium text-slate-500 mb-1">Compétences Démarrées</p>
-                   <p className="text-3xl font-bold text-emerald-600">{activeComps}</p>
-                   <p className="text-xs text-slate-400 mt-2">Sur {competences.length} au total</p>
-                </div>
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                   <p className="text-sm font-medium text-slate-500 mb-1">Niveaux</p>
-                   <div className="flex flex-wrap gap-2 mt-2">
-                     {uniqueGrades.map(g => (
-                       <span key={g} className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-semibold">{g}</span>
-                     ))}
-                   </div>
-                </div>
-              </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                       <p className="text-sm font-medium text-slate-500 mb-1">Élèves Actifs</p>
+                       <p className="text-3xl font-bold text-indigo-700">{activeStudents.length}</p>
+                       <p className="text-xs text-slate-400 mt-2">{students.length - activeStudents.length} archivés</p>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                       <p className="text-sm font-medium text-slate-500 mb-1">Compétences Démarrées</p>
+                       <p className="text-3xl font-bold text-emerald-600">{activeComps}</p>
+                       <p className="text-xs text-slate-400 mt-2">Sur {competences.length} au total</p>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                       <p className="text-sm font-medium text-slate-500 mb-1">Niveaux</p>
+                       <div className="flex flex-wrap gap-2 mt-2">
+                         {uniqueGrades.map(g => (
+                           <span key={g} className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-semibold">{g}</span>
+                         ))}
+                       </div>
+                    </div>
+                  </div>
 
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
-                <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-                   <h3 className="font-semibold text-slate-800">Taux de réussite par compétence</h3>
-                </div>
-                <div className="max-h-[600px] overflow-auto">
-                  {Object.keys(pilotageData).length === 0 ? (
-                    <div className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée pour cette sélection.</div>
-                  ) : (
-                    Object.entries(pilotageData).sort(([domA], [domB]) => domA.localeCompare(domB)).map(([domain, subDomains]) => (
-                      <div key={domain}>
-                        <div className="bg-indigo-50 px-4 py-2 border-y border-indigo-100 sticky top-0 z-10">
-                           <h4 className="font-bold text-indigo-800 uppercase text-xs tracking-wider">{domain}</h4>
-                        </div>
-                        {Object.entries(subDomains).sort(([subA], [subB]) => subA.localeCompare(subB)).map(([subDomain, comps]) => (
-                          <div key={subDomain}>
-                            {subDomain !== 'Sans sous-domaine' && (
-                              <div className="bg-slate-50 px-6 py-1.5 border-b border-slate-100">
-                                <h5 className="font-semibold text-slate-600 text-xs">{subDomain}</h5>
+                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
+                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                       <h3 className="font-semibold text-slate-800">Taux de réussite par compétence</h3>
+                    </div>
+                    <div className="max-h-[600px] overflow-auto">
+                      {Object.keys(pilotageData).length === 0 ? (
+                        <div className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée pour cette sélection.</div>
+                      ) : (
+                        Object.entries(pilotageData).sort(([domA], [domB]) => domA.localeCompare(domB)).map(([domain, subDomains]) => (
+                          <div key={domain}>
+                            <div className="bg-indigo-50 px-4 py-2 border-y border-indigo-100 sticky top-0 z-10">
+                               <h4 className="font-bold text-indigo-800 uppercase text-xs tracking-wider">{domain}</h4>
+                            </div>
+                            {Object.entries(subDomains).sort(([subA], [subB]) => subA.localeCompare(subB)).map(([subDomain, comps]) => (
+                              <div key={subDomain}>
+                                {subDomain !== 'Sans sous-domaine' && (
+                                  <div className="bg-slate-50 px-6 py-1.5 border-b border-slate-100">
+                                    <h5 className="font-semibold text-slate-600 text-xs">{subDomain}</h5>
+                                  </div>
+                                )}
+                                <ul className="divide-y divide-slate-100">
+                                  {comps.sort((a,b) => (b.successRate || 0) - (a.successRate || 0)).map(c => {
+                                     const gPct = (c.green / c.totalStarted) * 100;
+                                     const yPct = (c.yellow / c.totalStarted) * 100;
+                                     const rPct = (c.red / c.totalStarted) * 100;
+                                     
+                                     return (
+                                       <li key={c.id} className="p-4 pl-8 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                          <div className="flex-1">
+                                            <p className="text-sm font-semibold text-slate-800">{getCode(c)} : {c.title}</p>
+                                            <p className="text-[10px] text-slate-400 mt-1">{c.totalStarted} évaluations</p>
+                                          </div>
+                                          <div className="flex items-center gap-4 shrink-0">
+                                             <div className="flex w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                {gPct > 0 && <div className="h-full bg-emerald-500" style={{ width: `${gPct}%` }}></div>}
+                                                {yPct > 0 && <div className="h-full bg-amber-400" style={{ width: `${yPct}%` }}></div>}
+                                                {rPct > 0 && <div className="h-full bg-rose-500" style={{ width: `${rPct}%` }}></div>}
+                                             </div>
+                                             <span className="text-lg font-bold min-w-[3rem] text-right text-slate-700">
+                                               {c.successRate !== null ? `${Math.round(c.successRate)}%` : '-'}
+                                             </span>
+                                          </div>
+                                       </li>
+                                     );
+                                  })}
+                                </ul>
                               </div>
-                            )}
-                            <ul className="divide-y divide-slate-100">
-                              {comps.sort((a,b) => (b.successRate || 0) - (a.successRate || 0)).map(c => {
-                                 const gPct = (c.green / c.totalStarted) * 100;
-                                 const yPct = (c.yellow / c.totalStarted) * 100;
-                                 const rPct = (c.red / c.totalStarted) * 100;
-                                 
-                                 return (
-                                   <li key={c.id} className="p-4 pl-8 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                      <div className="flex-1">
-                                        <p className="text-sm font-semibold text-slate-800">{getCode(c)} : {c.title}</p>
-                                        <p className="text-[10px] text-slate-400 mt-1">{c.totalStarted} évaluations</p>
-                                      </div>
-                                      <div className="flex items-center gap-4 shrink-0">
-                                         <div className="flex w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                            {gPct > 0 && <div className="h-full bg-emerald-500" style={{ width: `${gPct}%` }}></div>}
-                                            {yPct > 0 && <div className="h-full bg-amber-400" style={{ width: `${yPct}%` }}></div>}
-                                            {rPct > 0 && <div className="h-full bg-rose-500" style={{ width: `${rPct}%` }}></div>}
-                                         </div>
-                                         <span className="text-lg font-bold min-w-[3rem] text-right text-slate-700">
-                                           {c.successRate !== null ? `${Math.round(c.successRate)}%` : '-'}
-                                         </span>
-                                      </div>
-                                   </li>
-                                 );
-                              })}
-                            </ul>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
