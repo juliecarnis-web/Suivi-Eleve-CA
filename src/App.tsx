@@ -333,7 +333,6 @@ export default function App() {
     let activeCompsCount = 0;
     const enhancedComps = competences.map(comp => {
       let green = 0, yellow = 0, red = 0, totalStarted = 0;
-      let totalProgressionPercentage = 0;
       
       const relevantStudents = activeStudents.filter(s => s.grade === getGrade(comp));
       
@@ -345,8 +344,6 @@ export default function App() {
           if (res.score >= 5) green++;
           else if (res.score >= 3 && res.score < 5) yellow++;
           else red++;
-          
-          totalProgressionPercentage += (res.score / 5) * 100;
         }
       });
       
@@ -358,7 +355,7 @@ export default function App() {
         green, 
         yellow, 
         red, 
-        successRate: totalStarted > 0 ? (totalProgressionPercentage / totalStarted) : null 
+        successRate: totalStarted > 0 ? (green / totalStarted) * 100 : null 
       };
     });
 
