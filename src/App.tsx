@@ -632,7 +632,7 @@ export default function App() {
           </div>
 
           <div className="flex-1 p-6 overflow-auto">
-            <div className="max-w-4xl mx-auto space-y-6">
+            <div className="w-full space-y-6">
               <h2 className="text-xl font-bold text-slate-800 tracking-tight">Analyse de la cohorte</h2>
               
               {pilotFilterDomain === 'all' ? (
@@ -712,7 +712,9 @@ export default function App() {
                                                {rPct > 0 && <div className="w-full bg-rose-400" style={{ height: `${rPct}%` }}></div>}
                                             </div>
                                             <div className="text-center w-full">
-                                              <p className="text-[11px] font-extrabold text-slate-800 truncate bg-slate-100/80 rounded px-1 py-0.5 shadow-sm">{getCode(c)}</p>
+                                              <p className="text-[11px] font-extrabold text-slate-800 truncate bg-slate-100/80 rounded px-1 py-0.5 shadow-sm">
+                                                {pilotFilterGrade === 'all' ? `${getGrade(c)} - ${getCode(c)}` : getCode(c)}
+                                              </p>
                                             </div>
                                          </li>
                                        );
