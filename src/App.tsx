@@ -670,48 +670,59 @@ export default function App() {
                       {Object.keys(pilotageData).length === 0 ? (
                         <div className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée pour cette sélection.</div>
                       ) : (
-                        Object.entries(pilotageData).sort(([domA], [domB]) => domA.localeCompare(domB)).map(([domain, subDomains]) => (
-                          <div key={domain}>
-                            <div className="bg-indigo-50 px-4 py-2 border-y border-indigo-100 sticky top-0 z-10">
-                               <h4 className="font-bold text-indigo-800 uppercase text-xs tracking-wider">{domain}</h4>
-                            </div>
-                            {Object.entries(subDomains).sort(([subA], [subB]) => subA.localeCompare(subB)).map(([subDomain, comps]) => (
-                              <div key={subDomain}>
-                                {subDomain !== 'Sans sous-domaine' && (
-                                  <div className="bg-slate-50 px-6 py-1.5 border-b border-slate-100">
-                                    <h5 className="font-semibold text-slate-600 text-xs">{subDomain}</h5>
-                                  </div>
-                                )}
-                                <ul className="divide-y divide-slate-100">
-                                  {comps.sort((a,b) => (b.successRate || 0) - (a.successRate || 0)).map(c => {
-                                     const gPct = (c.green / c.totalStarted) * 100;
-                                     const yPct = (c.yellow / c.totalStarted) * 100;
-                                     const rPct = (c.red / c.totalStarted) * 100;
-                                     
-                                     return (
-                                       <li key={c.id} className="p-4 pl-8 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                          <div className="flex-1">
-                                            <p className="text-sm font-semibold text-slate-800">{getCode(c)} : {c.title}</p>
-                                            <p className="text-[10px] text-slate-400 mt-1">{c.totalStarted} évaluations</p>
-                                          </div>
-                                          <div className="flex items-center gap-4 shrink-0">
-                                             <div className="flex w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                                {gPct > 0 && <div className="h-full bg-emerald-500" style={{ width: `${gPct}%` }}></div>}
-                                                {yPct > 0 && <div className="h-full bg-amber-400" style={{ width: `${yPct}%` }}></div>}
-                                                {rPct > 0 && <div className="h-full bg-rose-500" style={{ width: `${rPct}%` }}></div>}
-                                             </div>
-                                             <span className="text-lg font-bold min-w-[3rem] text-right text-slate-700">
-                                               {c.successRate !== null ? `${Math.round(c.successRate)}%` : '-'}
-                                             </span>
-                                          </div>
-                                       </li>
-                                     );
-                                  })}
-                                </ul>
+                        Object.entries(pilotageData).sort(([domA], [domB]) => domA.localeCompare(domB)).map(([domain, subDomains]) => {
+                          const allCompsForDomain = Object.values(subDomains).flat();
+                          const validComps = allCompsForDomain.filter(c => c.successRate !== null);
+                          const avgSuccessRate = validComps.length > 0 ? validComps.reduce((acc, c) => acc + (c.successRate as number), 0) / validComps.length : null;
+
+                          return (
+                            <div key={domain}>
+                              <div className="bg-indigo-50 px-4 py-2 border-y border-indigo-100 sticky top-0 z-10 flex items-center justify-between">
+                                 <h4 className="font-bold text-indigo-800 uppercase text-xs tracking-wider">{domain}</h4>
+                                 {avgSuccessRate !== null && (
+                                    <div className="flex items-center gap-3">
+                                       <div className="w-24 h-2 bg-indigo-200 rounded-full overflow-hidden">
+                                          <div className="h-full bg-indigo-600" style={{ width: `${avgSuccessRate}%` }}></div>
+                                       </div>
+                                       <span className="text-sm font-bold text-indigo-800">{Math.round(avgSuccessRate)}%</span>
+                                    </div>
+                                 )}
                               </div>
-                            ))}
-                          </div>
-                        ))
+                              {Object.entries(subDomains).sort(([subA], [subB]) => subA.localeCompare(subB)).map(([subDomain, comps]) => (
+                                <div key={subDomain}>
+                                  {subDomain !== 'Sans sous-domaine' && (
+                                    <div className="bg-slate-50 px-6 py-1.5 border-b border-slate-100">
+                                      <h5 className="font-semibold text-slate-600 text-xs">{subDomain}</h5>
+                                    </div>
+                                  )}
+                                  <ul className="flex flex-wrap gap-3 p-6 bg-white">
+                                    {comps.sort((a,b) => getCode(a).localeCompare(getCode(b), undefined, { numeric: true })).map(c => {
+                                       const gPct = (c.green / c.totalStarted) * 100;
+                                       const yPct = (c.yellow / c.totalStarted) * 100;
+                                       const rPct = (c.red / c.totalStarted) * 100;
+                                       
+                                       return (
+                                         <li key={c.id} className="p-3 hover:bg-slate-50 transition flex flex-col items-center justify-end w-20 sm:w-24 rounded-xl border border-transparent hover:border-slate-100" title={c.title}>
+                                            <span className="text-sm font-bold text-slate-600 mb-2">
+                                              {c.successRate !== null ? `${Math.round(c.successRate)}%` : '-'}
+                                            </span>
+                                            <div className="flex flex-col w-5 sm:w-6 h-28 bg-slate-100 rounded-full overflow-hidden shadow-inner mb-3">
+                                               {gPct > 0 && <div className="w-full bg-emerald-400" style={{ height: `${gPct}%` }}></div>}
+                                               {yPct > 0 && <div className="w-full bg-amber-400" style={{ height: `${yPct}%` }}></div>}
+                                               {rPct > 0 && <div className="w-full bg-rose-400" style={{ height: `${rPct}%` }}></div>}
+                                            </div>
+                                            <div className="text-center w-full">
+                                              <p className="text-[11px] font-extrabold text-slate-800 truncate bg-slate-100/80 rounded px-1 py-0.5 shadow-sm">{getCode(c)}</p>
+                                            </div>
+                                         </li>
+                                       );
+                                    })}
+                                  </ul>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   </div>
