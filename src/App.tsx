@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import Papa from 'papaparse';
-import { Loader2, PlusCircle, Upload, Trash2, ShieldAlert, Power, UserX, BookOpen, BarChart2, Settings } from 'lucide-react';
+import { Loader2, PlusCircle, Upload, Trash2, ShieldAlert, Power, UserX, BookOpen, BarChart2, Settings, Lock, Unlock } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
@@ -43,6 +43,10 @@ type Result = {
 };
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [loginInput, setLoginInput] = useState('');
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
+
   const [students, setStudents] = useState<Student[]>([]);
   const [competences, setCompetences] = useState<Competence[]>([]);
   // Map of studentId -> competenceId -> Result
@@ -391,6 +395,65 @@ export default function App() {
       .filter(Boolean)
   ));
 
+  const handleToggleEditMode = () => {
+    if (isEditMode) {
+      setIsEditMode(false);
+    } else {
+      const expectedEditPassword = import.meta.env.VITE_EDIT_PASSWORD || 'editsecret';
+      const pwd = window.prompt('Veuillez entrer le mot de passe de saisie :');
+      if (pwd === expectedEditPassword || import.meta.env.VITE_EDIT_PASSWORD === undefined) {
+        setIsEditMode(true);
+      } else if (pwd !== null) {
+        alert('Mot de passe incorrect');
+      }
+    }
+  };
+
+  if (!isAuthenticated) {
+    const expectedPassword = import.meta.env.VITE_LOGIN_PASSWORD || 'secret';
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 font-sans">
+        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-slate-200">
+          <div className="flex flex-col items-center mb-6">
+            <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
+              <Lock className="w-6 h-6 text-indigo-600" />
+            </div>
+            <h2 className="text-xl font-bold text-slate-800">Accès sécurisé</h2>
+            <p className="text-sm text-slate-500 text-center mt-2">Veuillez entrer le mot de passe pour accéder à l'application.</p>
+          </div>
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (loginInput === expectedPassword || import.meta.env.VITE_LOGIN_PASSWORD === undefined) {
+                setIsAuthenticated(true);
+              } else {
+                alert('Mot de passe incorrect');
+              }
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <input
+                type="password"
+                value={loginInput}
+                onChange={(e) => setLoginInput(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                placeholder="Mot de passe"
+                autoFocus
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition"
+            >
+              Déverrouiller
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-50">
@@ -430,28 +493,40 @@ export default function App() {
       {activeTab === 'saisie' && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Filters Bar */}
-          <div className="bg-white border-b border-slate-200 p-3 flex items-center gap-4 shrink-0 overflow-x-auto shadow-sm z-40">
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Niveau (Élèves)</label>
-              <select value={filterGrade} onChange={e => setFilterGrade(e.target.value)} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
-                <option value="all">Tous (Cohorte)</option>
-                {uniqueGrades.map(g => <option key={g} value={g}>{g}</option>)}
-              </select>
+          <div className="bg-white border-b border-slate-200 p-3 flex items-center justify-between shrink-0 overflow-x-auto shadow-sm z-40">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Niveau (Élèves)</label>
+                <select value={filterGrade} onChange={e => setFilterGrade(e.target.value)} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
+                  <option value="all">Tous (Cohorte)</option>
+                  {uniqueGrades.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+              <div className="w-px h-6 bg-slate-300 mx-2"></div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-slate-600">Domaine</label>
+                <select value={filterDomain} onChange={e => {setFilterDomain(e.target.value); setFilterSubDomain('all');}} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
+                  <option value="all">Tous</option>
+                  {uniqueDomains.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-slate-600">Sous-domaine</label>
+                <select value={filterSubDomain} onChange={e => setFilterSubDomain(e.target.value)} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
+                   <option value="all">Tous</option>
+                   {uniqueSubCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
             </div>
-            <div className="w-px h-6 bg-slate-300 mx-2"></div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-slate-600">Domaine</label>
-              <select value={filterDomain} onChange={e => {setFilterDomain(e.target.value); setFilterSubDomain('all');}} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
-                <option value="all">Tous</option>
-                {uniqueDomains.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-slate-600">Sous-domaine</label>
-              <select value={filterSubDomain} onChange={e => setFilterSubDomain(e.target.value)} className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-indigo-500">
-                 <option value="all">Tous</option>
-                 {uniqueSubCategories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+            
+            <div className="flex items-center ml-4 shrink-0">
+              <button
+                onClick={handleToggleEditMode}
+                className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors border", isEditMode ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50")}
+              >
+                {isEditMode ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                {isEditMode ? 'Mode Saisie: Actif' : 'Activer Saisie'}
+              </button>
             </div>
           </div>
 
@@ -485,7 +560,7 @@ export default function App() {
                        student.isArchived && "opacity-60 bg-slate-200"
                      )}>
                         <div className="flex flex-col items-center justify-end h-full gap-1">
-                           <label className="flex items-center cursor-pointer mb-1" title="Archiver / Réveiller élève">
+                           <label className={cn("flex items-center mb-1", isEditMode ? "cursor-pointer" : "pointer-events-none opacity-80")} title="Archiver / Réveiller élève">
                               <input type="checkbox" className="sr-only" checked={student.isArchived} onChange={e => toggleArchiveStudent(student.id, e.target.checked)} />
                               <div className={cn("w-6 h-3 rounded-full transition flex items-center px-0.5", student.isArchived ? 'bg-indigo-400' : 'bg-slate-300')}>
                                 <div className={cn("bg-white w-2 h-2 rounded-full shadow-sm transform transition", student.isArchived && 'translate-x-3')}></div>
@@ -526,7 +601,7 @@ export default function App() {
                              <button 
                                onClick={() => startCompetencesForCode(matchingComps, !isCodeStarted)}
                                title="Activer cette compétence pour tous"
-                               className={cn("p-1.5 border shadow-sm rounded-full transition shrink-0", isCodeStarted ? "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200" : "bg-white text-slate-400 border-slate-300 hover:text-indigo-500 hover:border-indigo-300")}
+                               className={cn("p-1.5 border shadow-sm rounded-full transition shrink-0", isCodeStarted ? "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200" : "bg-white text-slate-400 border-slate-300 hover:text-indigo-500 hover:border-indigo-300", !isEditMode && "pointer-events-none opacity-50")}
                              >
                                <Power className="w-3 h-3" />
                              </button>
@@ -577,11 +652,12 @@ export default function App() {
                          }
 
                          return (
-                            <td key={student.id} className={cn("p-1.5 border-r border-b border-slate-200 align-middle text-center transition", getScoreColor(score, true), student.isArchived && "opacity-60")}>
+                            <td key={student.id} className={cn("p-1.5 border-r border-b border-slate-200 align-middle text-center transition", getScoreColor(score, true), student.isArchived && "opacity-60", !isEditMode && "pointer-events-none")}>
                                <select 
                                  value={score}
                                  onChange={(e) => upsertResult(student.id, comp.id, { score: Number(e.target.value), isStarted: true })}
-                                 className={cn("bg-white border text-sm rounded block w-full p-1 font-bold shadow-sm cursor-pointer focus:ring-2 focus:ring-indigo-500 text-center text-center-last appearance-none", score >= 5 ? "border-emerald-300 text-emerald-700" : score >= 3 ? "border-amber-300 text-amber-700" : "border-rose-300 text-rose-700")}
+                                 className={cn("text-sm rounded block w-full p-1 font-bold focus:ring-2 focus:ring-indigo-500 text-center text-center-last appearance-none outline-none", isEditMode ? "bg-white border shadow-sm cursor-pointer" : "bg-transparent border-transparent cursor-default", score >= 5 ? "border-emerald-300 text-emerald-700" : score >= 3 ? "border-amber-300 text-amber-700" : "border-rose-300 text-rose-700")}
+                                 disabled={!isEditMode}
                                >
                                  {scoreOptions.map(n => <option key={n} value={n}>{n} / 10</option>)}
                                </select>
