@@ -640,28 +640,43 @@ export default function App() {
 
           <div className="flex-1 p-6 overflow-auto">
             <div className="w-full space-y-6">
-              <h2 className="text-xl font-bold text-slate-800 tracking-tight">Analyse de la cohorte</h2>
-              
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                       <p className="text-sm font-medium text-slate-500 mb-1">Élèves Actifs</p>
-                       <p className="text-3xl font-bold text-indigo-700">{activeStudents.length}</p>
-                       <p className="text-xs text-slate-400 mt-2">{students.length - activeStudents.length} archivés</p>
-                    </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                       <p className="text-sm font-medium text-slate-500 mb-1">Compétences Démarrées</p>
-                       <p className="text-3xl font-bold text-emerald-600">{activeComps}</p>
-                       <p className="text-xs text-slate-400 mt-2">Sur {competences.length} au total</p>
-                    </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                       <p className="text-sm font-medium text-slate-500 mb-1">Niveaux</p>
-                       <div className="flex flex-wrap gap-2 mt-2">
-                         {uniqueGrades.map(g => (
-                           <span key={g} className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-semibold">{g}</span>
-                         ))}
-                       </div>
-                    </div>
-                  </div>
+                   {/* Positionnement Individuel */}
+                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                         <label className="flex items-center gap-3 cursor-pointer shrink-0">
+                            <input type="checkbox" checked={isIndividualMode} onChange={e => setIsIndividualMode(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
+                            <span className="font-semibold text-slate-700">Positionnement individuel</span>
+                         </label>
+                         
+                         {isIndividualMode && (
+                            <div className="flex gap-3 items-center flex-1 w-full overflow-hidden">
+                               <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Élèves :</span>
+                               <div className="flex gap-2 overflow-x-auto pb-2 flex-1 scrollbar-thin">
+                                  {activeStudents.filter(s => pilotFilterGrade === 'all' || s.grade === pilotFilterGrade).map(s => {
+                                     const isSelected = selectedStudentIds.includes(s.id);
+                                     return (
+                                        <label key={s.id} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs cursor-pointer whitespace-nowrap transition-colors shrink-0", isSelected ? 'bg-indigo-100 border-indigo-300 text-indigo-800' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
+                                           <input 
+                                              type="checkbox" 
+                                              className="sr-only"
+                                              checked={isSelected}
+                                              onChange={(e) => {
+                                                 if (e.target.checked) setSelectedStudentIds(prev => [...prev, s.id]);
+                                                 else setSelectedStudentIds(prev => prev.filter(id => id !== s.id));
+                                              }}
+                                           />
+                                           <div className={cn("w-3 h-3 rounded flex items-center justify-center border", isSelected ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-400')}>
+                                              {isSelected && <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                           </div>
+                                           {s.firstName} {s.lastName}
+                                        </label>
+                                     );
+                                  })}
+                               </div>
+                            </div>
+                         )}
+                      </div>
+                   </div>
 
                    {/* Life Bar / Progression Annuelle */}
                    {(() => {
@@ -692,7 +707,7 @@ export default function App() {
                       const pGrey = (tGrey / total) * 100;
 
                       return (
-                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mt-6">
+                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                             <h3 className="font-semibold text-slate-800 mb-4">Progression Annuelle (Vue globale {pilotFilterGrade === 'all' ? 'Cohorte' : pilotFilterGrade})</h3>
                             <div className="flex h-6 rounded-full overflow-hidden shadow-inner w-full">
                                {pGreen > 0 && <div style={{ width: `${pGreen}%` }} className="bg-emerald-500 h-full transition-all group relative" title={`Validé: ${tGreen} (${pGreen.toFixed(1)}%)`}></div>}
@@ -710,97 +725,69 @@ export default function App() {
                       );
                    })()}
 
-                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6 mb-8">
+                   {/* Graphique */}
+                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
                         <h3 className="font-semibold text-slate-800">Taux de réussite par compétence</h3>
                      </div>
                      <div className="p-6">
-                        {/* Options */}
-                        <div className="mb-6 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
-                           <label className="flex items-center gap-3 cursor-pointer shrink-0">
-                              <input type="checkbox" checked={isIndividualMode} onChange={e => setIsIndividualMode(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
-                              <span className="font-semibold text-slate-700">Positionnement individuel</span>
-                           </label>
-                           
-                           {isIndividualMode && (
-                              <div className="flex gap-3 items-center flex-1 w-full overflow-hidden">
-                                 <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Élèves :</span>
-                                 <div className="flex gap-2 overflow-x-auto pb-2 flex-1 scrollbar-thin">
-                                    {activeStudents.filter(s => pilotFilterGrade === 'all' || s.grade === pilotFilterGrade).map(s => {
-                                       const isSelected = selectedStudentIds.includes(s.id);
-                                       return (
-                                          <label key={s.id} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs cursor-pointer whitespace-nowrap transition-colors shrink-0", isSelected ? 'bg-indigo-100 border-indigo-300 text-indigo-800' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
-                                             <input 
-                                                type="checkbox" 
-                                                className="sr-only"
-                                                checked={isSelected}
-                                                onChange={(e) => {
-                                                   if (e.target.checked) setSelectedStudentIds(prev => [...prev, s.id]);
-                                                   else setSelectedStudentIds(prev => prev.filter(id => id !== s.id));
-                                                }}
-                                             />
-                                             <div className={cn("w-3 h-3 rounded flex items-center justify-center border", isSelected ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-400')}>
-                                                {isSelected && <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                                             </div>
-                                             {s.firstName} {s.lastName}
-                                          </label>
-                                       );
-                                    })}
-                                 </div>
-                              </div>
-                           )}
-                        </div>
-
-                        {/* Chart */}
                         {(() => {
                            const chartData: any[] = [];
                            let gapCount = 1;
-                           const domainsToIterate = pilotFilterDomain === 'all' ? Object.keys(pilotageData).sort((a,b) => a.localeCompare(b)) : (pilotageData[pilotFilterDomain] ? [pilotFilterDomain] : []);
+                           // On s'assure que si un domaine est sélectionné, on n'itère QUE sur lui. 
+                           let domainsToIterate = Object.keys(pilotageData).sort((a,b) => a.localeCompare(b));
+                           if (pilotFilterDomain !== 'all') {
+                              domainsToIterate = domainsToIterate.filter(d => d === pilotFilterDomain);
+                           }
+                           
                            domainsToIterate.forEach((domain, domIndex) => {
-                              const subDomains = Object.keys(pilotageData[domain] || {}).sort((a,b) => a.localeCompare(b));
-
-                           subDomains.forEach((subDomain, index) => {
-                              const comps = pilotageData[domain][subDomain];
-                              comps.sort((a,b) => getCode(a).localeCompare(getCode(b), undefined, { numeric: true }));
-                              
-                              comps.forEach(c => {
-                                 const codeLabel = pilotFilterGrade === 'all' ? `${getGrade(c)} - ${getCode(c)}` : getCode(c);
-                                 const dataPoint: any = {
-                                    name: codeLabel,
-                                    domain: domain,
-                                    subDomain: subDomain === 'Sans sous-domaine' ? '' : subDomain,
-                                    cohortAvg: c.cohortAvg !== null ? Number(c.cohortAvg).toFixed(2) : null,
-                                 };
-                                 
-                                 // Cohort percentages for the background stacked bars
-                                 if (c.totalStarted > 0) {
-                                    dataPoint.pctRed = (c.red / c.totalStarted) * 100;
-                                    dataPoint.pctOrange = (c.yellow / c.totalStarted) * 100;
-                                    dataPoint.pctGreen = (c.green / c.totalStarted) * 100;
-                                 } else {
-                                    dataPoint.pctRed = 0;
-                                    dataPoint.pctOrange = 0;
-                                    dataPoint.pctGreen = 0;
-                                 }
-                                 
-                                 if (isIndividualMode) {
-                                    selectedStudentIds.forEach(studentId => {
-                                       const res = results[studentId]?.[c.id];
-                                       if (res && res.isStarted) {
-                                          dataPoint[`student_${studentId}`] = res.score;
-                                       }
-                                    });
-                                 }
-                                 
-                                 chartData.push(dataPoint);
-                              });
-                              
-                              const isLastDom = domIndex === domainsToIterate.length - 1;
-                              const isLastSub = index === subDomains.length - 1;
-                              if (!isLastDom || !isLastSub) {
-                                 chartData.push({ name: ' '.repeat(gapCount++), isGap: true });
+                              let subDomains = Object.keys(pilotageData[domain] || {}).sort((a,b) => a.localeCompare(b));
+                              if (pilotFilterSubDomain !== 'all') {
+                                 subDomains = subDomains.filter(sd => sd === pilotFilterSubDomain);
                               }
-                           });
+
+                              subDomains.forEach((subDomain, index) => {
+                                 const comps = pilotageData[domain][subDomain];
+                                 comps.sort((a,b) => getCode(a).localeCompare(getCode(b), undefined, { numeric: true }));
+                                 
+                                 comps.forEach(c => {
+                                    const codeLabel = pilotFilterGrade === 'all' ? `${getGrade(c)} - ${getCode(c)}` : getCode(c);
+                                    const dataPoint: any = {
+                                       name: codeLabel,
+                                       domain: domain,
+                                       subDomain: subDomain === 'Sans sous-domaine' ? '' : subDomain,
+                                       cohortAvg: c.cohortAvg !== null ? Number(c.cohortAvg).toFixed(2) : null,
+                                    };
+                                    
+                                    // Cohort percentages for the background stacked bars
+                                    if (c.totalStarted > 0) {
+                                       dataPoint.pctRed = (c.red / c.totalStarted) * 100;
+                                       dataPoint.pctOrange = (c.yellow / c.totalStarted) * 100;
+                                       dataPoint.pctGreen = (c.green / c.totalStarted) * 100;
+                                    } else {
+                                       dataPoint.pctRed = 0;
+                                       dataPoint.pctOrange = 0;
+                                       dataPoint.pctGreen = 0;
+                                    }
+                                    
+                                    if (isIndividualMode) {
+                                       selectedStudentIds.forEach(studentId => {
+                                          const res = results[studentId]?.[c.id];
+                                          if (res && res.isStarted) {
+                                             dataPoint[`student_${studentId}`] = res.score;
+                                          }
+                                       });
+                                    }
+                                    
+                                    chartData.push(dataPoint);
+                                 });
+                                 
+                                 const isLastDom = domIndex === domainsToIterate.length - 1;
+                                 const isLastSub = index === subDomains.length - 1;
+                                 if (!isLastDom || !isLastSub) {
+                                    chartData.push({ name: ' '.repeat(gapCount++), isGap: true });
+                                 }
+                              });
                            });
 
                            if (chartData.length === 0) {
@@ -809,19 +796,18 @@ export default function App() {
 
                            const studentColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#91eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080'];
                            
-                           // Determiner si on affiche la cohorte moyenne
                            const showCohortAvg = !isIndividualMode || selectedStudentIds.length === 0;
 
                            return (
-                              <div className="h-[350px] w-full mt-4">
+                              <div className="h-[300px] w-full">
                                  <ResponsiveContainer width="100%" height="100%">
-                                    <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
+                                    <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 40 }}>
                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                                        <XAxis 
                                           dataKey="name" 
                                           angle={-45} 
                                           textAnchor="end"
-                                          height={80}
+                                          height={60}
                                           tick={{ fontSize: 11, fill: '#475569', fontWeight: 'bold' }}
                                           interval={0}
                                        />
@@ -840,7 +826,7 @@ export default function App() {
                                        <Tooltip 
                                           contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                           labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
-                                          formatter={(value: any, name: string) => {
+                                          formatter={(value: any, name: string, props: any) => {
                                              if (name === 'pctGreen') return [`${Number(value).toFixed(1)}%`, 'Validé (>= 5)'];
                                              if (name === 'pctOrange') return [`${Number(value).toFixed(1)}%`, 'En cours (3-4)'];
                                              if (name === 'pctRed') return [`${Number(value).toFixed(1)}%`, 'Non acquis (< 3)'];
@@ -850,7 +836,7 @@ export default function App() {
                                        <Legend verticalAlign="top" height={36} />
                                        
                                        {/* Background Stacked Bars */}
-                                       <Bar yAxisId="right" dataKey="pctRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={40} />
+                                       <Bar yAxisId="right" dataKey="pctRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={15} />
                                        <Bar yAxisId="right" dataKey="pctOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
                                        <Bar yAxisId="right" dataKey="pctGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
                                        
@@ -872,13 +858,14 @@ export default function App() {
 
                                        {isIndividualMode && selectedStudentIds.map((studentId, idx) => {
                                           const s = students.find(st => st.id === studentId);
+                                          const labelName = s ? `${s.firstName} ${s.lastName}` : `Élève ${studentId}`;
                                           return (
                                              <Line 
                                                 yAxisId="left"
                                                 key={studentId}
                                                 type="monotone" 
                                                 dataKey={`student_${studentId}`}
-                                                name={s ? `${s.firstName} ${s.lastName}` : 'Élève'}
+                                                name={labelName}
                                                 stroke={studentColors[idx % studentColors.length]}
                                                 strokeWidth={2}
                                                 dot={{ r: 3 }}
@@ -894,6 +881,31 @@ export default function App() {
                         })()}
                      </div>
                    </div>
+
+              {/* Analyse de la cohorte (en bas) */}
+              <div className="pt-2">
+                 <h2 className="text-xl font-bold text-slate-800 tracking-tight mb-4">Analyse de la cohorte</h2>
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                       <p className="text-sm font-medium text-slate-500 mb-1">Élèves Actifs</p>
+                       <p className="text-2xl font-bold text-indigo-700">{activeStudents.length}</p>
+                       <p className="text-xs text-slate-400 mt-1">{students.length - activeStudents.length} archivés</p>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                       <p className="text-sm font-medium text-slate-500 mb-1">Compétences Démarrées</p>
+                       <p className="text-2xl font-bold text-emerald-600">{activeComps}</p>
+                       <p className="text-xs text-slate-400 mt-1">Sur {competences.length} au total</p>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                       <p className="text-sm font-medium text-slate-500 mb-1">Niveaux</p>
+                       <div className="flex flex-wrap gap-2 mt-2">
+                         {uniqueGrades.map(g => (
+                           <span key={g} className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-semibold">{g}</span>
+                         ))}
+                       </div>
+                    </div>
+                 </div>
+              </div>
             </div>
           </div>
         </div>
