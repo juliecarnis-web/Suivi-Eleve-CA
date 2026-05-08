@@ -827,12 +827,12 @@ export default function App() {
                                           contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                           labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
                                           formatter={(value: any, name: string, props: any) => {
-                                             if (name === 'pctGreen') return [`${Number(value).toFixed(1)} %`, 'Validé (>= 5)'];
-                                             if (name === 'pctOrange') return [`${Number(value).toFixed(1)} %`, 'En cours (3-4)'];
-                                             if (name === 'pctRed') return [`${Number(value).toFixed(1)} %`, 'Non acquis (< 3)'];
+                                             if (name === 'Validé (>= 5)' || name === 'En cours (3-4)' || name === 'Non acquis (< 3)') {
+                                                return [`${Number(value).toFixed(1)} %`, name];
+                                             }
                                              // Pour la moyenne de cohorte ou les élèves
-                                             if (typeof value === 'number' && !Number.isInteger(value)) {
-                                                return [Number(value).toFixed(1), name];
+                                             if (typeof value === 'number') {
+                                                return [!Number.isInteger(value) ? Number(value).toFixed(1) : value, name];
                                              }
                                              return [value, name];
                                           }}
