@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import { Loader2, PlusCircle, Upload, Trash2, ShieldAlert, Power, UserX, BookOpen, BarChart2, Settings } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 // --- Utility Functions ---
 function cn(...inputs: ClassValue[]) {
@@ -58,6 +59,10 @@ export default function App() {
   const [pilotFilterGrade, setPilotFilterGrade] = useState<string>('all');
   const [pilotFilterDomain, setPilotFilterDomain] = useState<string>('all');
   const [pilotFilterSubDomain, setPilotFilterSubDomain] = useState<string>('all');
+  
+  // Pilotage Individual Positioning Mode
+  const [isIndividualMode, setIsIndividualMode] = useState<boolean>(false);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
   const [statusMsg, setStatusMsg] = useState('');
 
@@ -332,7 +337,7 @@ export default function App() {
   const { pilotageData, activeComps } = useMemo(() => {
     let activeCompsCount = 0;
     const enhancedComps = competences.map(comp => {
-      let green = 0, yellow = 0, red = 0, totalStarted = 0;
+      let green = 0, yellow = 0, red = 0, totalStarted = 0, sumScore = 0;
       
       const relevantStudents = activeStudents.filter(s => s.grade === getGrade(comp));
       
@@ -340,6 +345,7 @@ export default function App() {
         const res = results[s.id]?.[comp.id];
         if (res && res.isStarted) {
           totalStarted++;
+          sumScore += res.score || 0;
           
           if (res.score >= 5) green++;
           else if (res.score >= 3 && res.score < 5) yellow++;
@@ -355,7 +361,8 @@ export default function App() {
         green, 
         yellow, 
         red, 
-        successRate: totalStarted > 0 ? (green / totalStarted) * 100 : null 
+        successRate: totalStarted > 0 ? (green / totalStarted) * 100 : null,
+        cohortAvg: totalStarted > 0 ? sumScore / totalStarted : null
       };
     });
 
@@ -373,7 +380,7 @@ export default function App() {
        grouped[dom][sub].push(c);
     });
 
-    return { pilotageData: grouped, activeComps: activeCompsCount };
+    return { pilotageData: grouped, activeComps: activeCompsCount, flatFilteredComps: filtered };
   }, [competences, activeStudents, results, pilotFilterGrade, pilotFilterDomain, pilotFilterSubDomain, getGrade, getDomain]);
 
   const pilotUniqueDomains = Array.from(new Set(competences.map(c => getDomain(c)).filter(Boolean)));
@@ -662,72 +669,184 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
-                    <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-                       <h3 className="font-semibold text-slate-800">Taux de réussite par compétence</h3>
-                    </div>
-                    <div className="max-h-[600px] overflow-auto">
-                      {Object.keys(pilotageData).length === 0 ? (
-                        <div className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée pour cette sélection.</div>
-                      ) : (
-                        Object.entries(pilotageData).sort(([domA], [domB]) => domA.localeCompare(domB)).map(([domain, subDomains]) => {
-                          const allCompsForDomain = Object.values(subDomains).flat();
-                          const validComps = allCompsForDomain.filter(c => c.successRate !== null);
-                          const avgSuccessRate = validComps.length > 0 ? validComps.reduce((acc, c) => acc + (c.successRate as number), 0) / validComps.length : null;
-
-                          return (
-                            <div key={domain}>
-                              <div className="bg-indigo-50 px-4 py-2 border-y border-indigo-100 sticky top-0 z-10 flex items-center justify-between">
-                                 <h4 className="font-bold text-indigo-800 uppercase text-xs tracking-wider">{domain}</h4>
-                                 {avgSuccessRate !== null && (
-                                    <div className="flex items-center gap-3">
-                                       <div className="w-24 h-2 bg-indigo-200 rounded-full overflow-hidden">
-                                          <div className="h-full bg-indigo-600" style={{ width: `${avgSuccessRate}%` }}></div>
-                                       </div>
-                                       <span className="text-sm font-bold text-indigo-800">{Math.round(avgSuccessRate)}%</span>
-                                    </div>
-                                 )}
+                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
+                     <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                        <h3 className="font-semibold text-slate-800">Taux de réussite par compétence</h3>
+                     </div>
+                     <div className="p-6">
+                        {/* Options */}
+                        <div className="mb-6 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
+                           <label className="flex items-center gap-3 cursor-pointer">
+                              <input type="checkbox" checked={isIndividualMode} onChange={e => setIsIndividualMode(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
+                              <span className="font-semibold text-slate-700">Positionnement individuel</span>
+                           </label>
+                           
+                           {isIndividualMode && (
+                              <div className="flex gap-3 items-center flex-1">
+                                 <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Élèves :</span>
+                                 <div className="relative flex-1 max-w-md">
+                                     <select multiple value={selectedStudentIds} onChange={e => {
+                                        const options = Array.from(e.target.options);
+                                        setSelectedStudentIds(options.filter(o => o.selected).map(o => o.value));
+                                     }} className="w-full text-sm border border-slate-300 rounded p-2 h-24 focus:ring-2 focus:ring-indigo-500 bg-white">
+                                        {activeStudents.filter(s => pilotFilterGrade === 'all' || s.grade === pilotFilterGrade).map(s => (
+                                           <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+                                        ))}
+                                     </select>
+                                     <p className="text-xs text-slate-400 mt-1">Maintenez Ctrl/Cmd pour sélectionner plusieurs élèves.</p>
+                                 </div>
                               </div>
-                              {Object.entries(subDomains).sort(([subA], [subB]) => subA.localeCompare(subB)).map(([subDomain, comps]) => (
-                                <div key={subDomain}>
-                                  {subDomain !== 'Sans sous-domaine' && (
-                                    <div className="bg-slate-50 px-6 py-1.5 border-b border-slate-100">
-                                      <h5 className="font-semibold text-slate-600 text-xs">{subDomain}</h5>
-                                    </div>
-                                  )}
-                                  <ul className="flex flex-wrap gap-3 p-6 bg-white">
-                                    {comps.sort((a,b) => getCode(a).localeCompare(getCode(b), undefined, { numeric: true })).map(c => {
-                                       const gPct = (c.green / c.totalStarted) * 100;
-                                       const yPct = (c.yellow / c.totalStarted) * 100;
-                                       const rPct = (c.red / c.totalStarted) * 100;
+                           )}
+                        </div>
+
+                        {/* Chart */}
+                        {(() => {
+                           const chartData: any[] = [];
+                           const subDomains = Object.keys(pilotageData[pilotFilterDomain] || {}).sort((a,b) => a.localeCompare(b));
+
+                           subDomains.forEach((subDomain, index) => {
+                              const comps = pilotageData[pilotFilterDomain][subDomain];
+                              comps.sort((a,b) => getCode(a).localeCompare(getCode(b), undefined, { numeric: true }));
+                              
+                              comps.forEach(c => {
+                                 const codeLabel = pilotFilterGrade === 'all' ? `${getGrade(c)} - ${getCode(c)}` : getCode(c);
+                                 const dataPoint: any = {
+                                    name: codeLabel,
+                                    subDomain: subDomain === 'Sans sous-domaine' ? '' : subDomain,
+                                    cohortAvg: c.cohortAvg !== null ? Number(c.cohortAvg).toFixed(2) : null,
+                                 };
+                                 
+                                 if (isIndividualMode) {
+                                    selectedStudentIds.forEach(studentId => {
+                                       const res = results[studentId]?.[c.id];
+                                       if (res && res.isStarted) {
+                                          dataPoint[`student_${studentId}`] = res.score;
+                                       }
+                                    });
+                                 }
+                                 
+                                 chartData.push(dataPoint);
+                              });
+                              
+                              if (index < subDomains.length - 1) {
+                                 chartData.push({ name: ` `, isGap: true });
+                              }
+                           });
+
+                           if (chartData.length === 0) {
+                              return <div className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée pour cette sélection.</div>;
+                           }
+
+                           const studentColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080'];
+
+                           return (
+                              <div className="h-[500px] w-full mt-4">
+                                 <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
+                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                       <XAxis 
+                                          dataKey="name" 
+                                          angle={-45} 
+                                          textAnchor="end"
+                                          height={80}
+                                          tick={{ fontSize: 11, fill: '#475569', fontWeight: 'bold' }}
+                                          interval={0}
+                                       />
+                                       <YAxis 
+                                          domain={[0, 10]} 
+                                          ticks={[0, 2, 4, 5, 6, 8, 10]}
+                                          tick={{ fontSize: 12, fill: '#475569' }}
+                                       />
+                                       <Tooltip 
+                                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                          labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
+                                       />
+                                       <Legend verticalAlign="top" height={36} />
+                                       <ReferenceLine y={5} stroke="#22c55e" strokeWidth={1} label={{ position: 'insideTopLeft', value: 'Seuil (5/10)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
                                        
-                                       return (
-                                         <li key={c.id} className="p-3 hover:bg-slate-50 transition flex flex-col items-center justify-end w-20 sm:w-24 rounded-xl border border-transparent hover:border-slate-100" title={c.title}>
-                                            <span className="text-sm font-bold text-slate-600 mb-2">
-                                              {c.successRate !== null ? `${Math.round(c.successRate)}%` : '-'}
-                                            </span>
-                                            <div className="flex flex-col w-5 sm:w-6 h-28 bg-slate-100 rounded-full overflow-hidden shadow-inner mb-3">
-                                               {gPct > 0 && <div className="w-full bg-emerald-400" style={{ height: `${gPct}%` }}></div>}
-                                               {yPct > 0 && <div className="w-full bg-amber-400" style={{ height: `${yPct}%` }}></div>}
-                                               {rPct > 0 && <div className="w-full bg-rose-400" style={{ height: `${rPct}%` }}></div>}
-                                            </div>
-                                            <div className="text-center w-full">
-                                              <p className="text-[11px] font-extrabold text-slate-800 truncate bg-slate-100/80 rounded px-1 py-0.5 shadow-sm">
-                                                {pilotFilterGrade === 'all' ? `${getGrade(c)} - ${getCode(c)}` : getCode(c)}
-                                              </p>
-                                            </div>
-                                         </li>
-                                       );
-                                    })}
-                                  </ul>
-                                </div>
-                              ))}
+                                       {!isIndividualMode && (
+                                          <Line 
+                                             type="monotone" 
+                                             dataKey="cohortAvg" 
+                                             name="Moyenne Cohorte"
+                                             stroke="#4f46e5" 
+                                             strokeWidth={3}
+                                             dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
+                                             activeDot={{ r: 6 }}
+                                             connectNulls={false}
+                                          />
+                                       )}
+
+                                       {isIndividualMode && selectedStudentIds.map((studentId, idx) => {
+                                          const s = students.find(st => st.id === studentId);
+                                          return (
+                                             <Line 
+                                                key={studentId}
+                                                type="monotone" 
+                                                dataKey={`student_${studentId}`}
+                                                name={s ? `${s.firstName} ${s.lastName}` : 'Élève'}
+                                                stroke={studentColors[idx % studentColors.length]}
+                                                strokeWidth={2}
+                                                dot={{ r: 3 }}
+                                                activeDot={{ r: 5 }}
+                                                connectNulls={false}
+                                             />
+                                          );
+                                       })}
+                                    </LineChart>
+                                 </ResponsiveContainer>
+                              </div>
+                           );
+                        })()}
+                     </div>
+                   </div>
+
+                   {/* Life Bar / Progression Annuelle */}
+                   {(() => {
+                      let tGreen = 0, tOrange = 0, tRed = 0, tGrey = 0;
+                      
+                      const filteredStudentsForLifeBar = activeStudents.filter(s => pilotFilterGrade === 'all' || s.grade === pilotFilterGrade);
+                      const relevantComps = competences.filter(c => pilotFilterGrade === 'all' || getGrade(c) === pilotFilterGrade);
+
+                      filteredStudentsForLifeBar.forEach(s => {
+                         relevantComps.forEach(c => {
+                            const res = results[s.id]?.[c.id];
+                            if (res && res.isStarted && res.score !== undefined) {
+                               if (res.score >= 5) tGreen++;
+                               else if (res.score >= 3 && res.score < 5) tOrange++;
+                               else tRed++;
+                            } else {
+                               tGrey++;
+                            }
+                         });
+                      });
+
+                      const total = tGreen + tOrange + tRed + tGrey;
+                      if (total === 0) return null;
+
+                      const pGreen = (tGreen / total) * 100;
+                      const pOrange = (tOrange / total) * 100;
+                      const pRed = (tRed / total) * 100;
+                      const pGrey = (tGrey / total) * 100;
+
+                      return (
+                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mt-6">
+                            <h3 className="font-semibold text-slate-800 mb-4">Progression Annuelle (Vue globale {pilotFilterGrade === 'all' ? 'Cohorte' : pilotFilterGrade})</h3>
+                            <div className="flex h-6 rounded-full overflow-hidden shadow-inner w-full">
+                               {pGreen > 0 && <div style={{ width: `${pGreen}%` }} className="bg-emerald-500 h-full transition-all group relative" title={`Validé: ${tGreen} (${pGreen.toFixed(1)}%)`}></div>}
+                               {pOrange > 0 && <div style={{ width: `${pOrange}%` }} className="bg-amber-400 h-full transition-all group relative" title={`En cours: ${tOrange} (${pOrange.toFixed(1)}%)`}></div>}
+                               {pRed > 0 && <div style={{ width: `${pRed}%` }} className="bg-rose-500 h-full transition-all group relative" title={`Non acquis: ${tRed} (${pRed.toFixed(1)}%)`}></div>}
+                               {pGrey > 0 && <div style={{ width: `${pGrey}%` }} className="bg-slate-200 h-full transition-all group relative" title={`Non évalué: ${tGrey} (${pGrey.toFixed(1)}%)`}></div>}
                             </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
+                            <div className="flex justify-between items-center text-xs font-medium text-slate-500 mt-3 px-1">
+                               <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500"></div> Validé ({pGreen.toFixed(1)}%)</div>
+                               <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-amber-400"></div> En cours ({pOrange.toFixed(1)}%)</div>
+                               <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-rose-500"></div> Non acquis ({pRed.toFixed(1)}%)</div>
+                               <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-slate-200"></div> Non évalué ({pGrey.toFixed(1)}%)</div>
+                            </div>
+                         </div>
+                      );
+                   })()}
                 </>
               )}
             </div>

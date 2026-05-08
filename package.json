@@ -11,15 +11,15 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
+    "@tailwindcss/vite": "^4.0.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.344.0",
     "papaparse": "^5.4.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "recharts": "^2.12.0",
+    "recharts": "^2.15.4",
     "tailwind-merge": "^2.2.1",
-    "tailwindcss": "^4.0.0",
-    "@tailwindcss/vite": "^4.0.0"
+    "tailwindcss": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
