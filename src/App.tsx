@@ -875,6 +875,7 @@ export default function App() {
 
                            const chartData: any[] = [];
                            let gapCount = 1;
+                           let blockIndex = 0;
                            // On s'assure que si un domaine est sélectionné, on n'itère QUE sur lui. 
                            let domainsToIterate = Object.keys(pilotageData).sort((a,b) => a.localeCompare(b));
                            if (pilotFilterDomain !== 'all') {
@@ -891,6 +892,8 @@ export default function App() {
                                  const comps = pilotageData[domain][subDomain];
                                  comps.sort((a,b) => getCode(a).localeCompare(getCode(b), undefined, { numeric: true }));
                                  
+                                 const currentBlockIndex = blockIndex++;
+                                 
                                  comps.forEach(c => {
                                     const codeLabel = pilotFilterGrade === 'all' ? `${getGrade(c)} - ${getCode(c)}` : getCode(c);
                                     const dataPoint: any = {
@@ -900,7 +903,7 @@ export default function App() {
                                        cohortAvg: c.cohortAvg !== null ? Number(c.cohortAvg).toFixed(2) : null,
                                     };
                                     
-                                    dataPoint.cohortAvgScaled = c.cohortAvg !== null && c.cohortAvg !== undefined ? scaleValue(Number(c.cohortAvg)) : null;
+                                    dataPoint[`cohortAvgScaled_blk_${currentBlockIndex}`] = c.cohortAvg !== null && c.cohortAvg !== undefined ? scaleValue(Number(c.cohortAvg)) : null;
 
                                     // Cohort percentages for the tooltip
                                     if (c.totalStarted > 0) {
@@ -921,11 +924,11 @@ export default function App() {
                                     if (isIndividualMode) {
                                        selectedStudentIds.forEach(studentId => {
                                           const s = students.find(st => st.id === studentId);
-                                          if (s) {
+                                          if (s && s.grade === getGrade(c)) {
                                              const res = results[studentId]?.[c.id];
                                              if (res && res.isStarted && res.score !== undefined) {
                                                 dataPoint[`student_${studentId}`] = res.score;
-                                                dataPoint[`student_${studentId}_scaled`] = scaleValue(res.score);
+                                                dataPoint[`student_${studentId}_scaled_blk_${currentBlockIndex}`] = scaleValue(res.score);
                                              }
                                           }
                                        });
@@ -941,6 +944,8 @@ export default function App() {
                                  }
                               });
                            });
+                           
+                           const totalBlocks = blockIndex;
 
                            if (chartData.length === 0) {
                               return <div className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée pour cette sélection.</div>;
@@ -994,10 +999,10 @@ export default function App() {
                                              }
                                              
                                              // Pour les élèves : on récupère la valeur non-transformée
-                                             if (props.dataKey && typeof props.dataKey === 'string' && props.dataKey.endsWith('_scaled')) {
-                                                const originalKey = props.dataKey.replace('_scaled', '');
+                                             if (props.dataKey && typeof props.dataKey === 'string' && props.dataKey.includes('_scaled_blk_') && name !== 'Moyenne Cohorte') {
+                                                const originalKey = props.dataKey.split('_scaled_blk_')[0];
                                                 const originalValue = payload[originalKey];
-                                                if (originalValue !== undefined) {
+                                                if (originalValue !== undefined && originalValue !== null) {
                                                    const studentId = originalKey.replace('student_', '');
                                                    const stock = calculateStudentStock(studentId);
                                                    const formatVal = !Number.isInteger(originalValue) ? Number(originalValue).toFixed(1) : originalValue;
@@ -1009,6 +1014,7 @@ export default function App() {
                                                       name
                                                    ];
                                                 }
+                                                return [null, null];
                                              }
                                              
                                              return [value, name];
@@ -1023,37 +1029,40 @@ export default function App() {
                                        
                                        <ReferenceLine y={80} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Seuil (5/10)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
                                        
-                                       {showCohortAvg && (
+                                       {showCohortAvg && Array.from({length: totalBlocks}).map((_, blkIdx) => (
                                           <Line 
+                                             key={`cohort-blk-${blkIdx}`}
                                              yAxisId="left"
                                              type="monotone" 
-                                             dataKey="cohortAvgScaled" 
+                                             dataKey={`cohortAvgScaled_blk_${blkIdx}`} 
                                              name="Moyenne Cohorte"
+                                             legendType={blkIdx === 0 ? "line" : "none"}
                                              stroke="#4f46e5" 
                                              strokeWidth={3}
                                              dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
                                              activeDot={{ r: 6 }}
                                              connectNulls={true}
                                           />
-                                       )}
+                                       ))}
 
-                                       {isIndividualMode && selectedStudentIds.map((studentId, idx) => {
+                                       {isIndividualMode && selectedStudentIds.flatMap((studentId, idx) => {
                                           const s = students.find(st => st.id === studentId);
                                           const labelName = s ? `${s.firstName} ${s.lastName}` : `Élève ${studentId}`;
-                                          return (
+                                          return Array.from({length: totalBlocks}).map((_, blkIdx) => (
                                              <Line 
                                                 yAxisId="left"
-                                                key={studentId}
+                                                key={`student-${studentId}-blk-${blkIdx}`}
                                                 type="monotone" 
-                                                dataKey={`student_${studentId}_scaled`}
+                                                dataKey={`student_${studentId}_scaled_blk_${blkIdx}`}
                                                 name={labelName}
+                                                legendType={blkIdx === 0 ? "line" : "none"}
                                                 stroke={studentColors[idx % studentColors.length]}
                                                 strokeWidth={2}
                                                 dot={{ r: 3 }}
                                                 activeDot={{ r: 5 }}
                                                 connectNulls={true}
                                              />
-                                          );
+                                          ));
                                        })}
                                     </ComposedChart>
                                  </ResponsiveContainer>
