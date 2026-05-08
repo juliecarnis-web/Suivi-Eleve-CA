@@ -3,7 +3,7 @@ import Papa from 'papaparse';
 import { Loader2, PlusCircle, Upload, Trash2, ShieldAlert, Power, UserX, BookOpen, BarChart2, Settings } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 // --- Utility Functions ---
 function cn(...inputs: ClassValue[]) {
@@ -642,12 +642,6 @@ export default function App() {
             <div className="w-full space-y-6">
               <h2 className="text-xl font-bold text-slate-800 tracking-tight">Analyse de la cohorte</h2>
               
-              {pilotFilterDomain === 'all' ? (
-                <div className="p-8 text-center bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500 font-medium">
-                  Veuillez sélectionner un domaine pour analyser les résultats.
-                </div>
-              ) : (
-                <>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                        <p className="text-sm font-medium text-slate-500 mb-1">Élèves Actifs</p>
@@ -668,138 +662,6 @@ export default function App() {
                        </div>
                     </div>
                   </div>
-
-                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
-                     <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-                        <h3 className="font-semibold text-slate-800">Taux de réussite par compétence</h3>
-                     </div>
-                     <div className="p-6">
-                        {/* Options */}
-                        <div className="mb-6 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
-                           <label className="flex items-center gap-3 cursor-pointer">
-                              <input type="checkbox" checked={isIndividualMode} onChange={e => setIsIndividualMode(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
-                              <span className="font-semibold text-slate-700">Positionnement individuel</span>
-                           </label>
-                           
-                           {isIndividualMode && (
-                              <div className="flex gap-3 items-center flex-1">
-                                 <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Élèves :</span>
-                                 <div className="relative flex-1 max-w-md">
-                                     <select multiple value={selectedStudentIds} onChange={e => {
-                                        const options = Array.from(e.target.options);
-                                        setSelectedStudentIds(options.filter(o => o.selected).map(o => o.value));
-                                     }} className="w-full text-sm border border-slate-300 rounded p-2 h-24 focus:ring-2 focus:ring-indigo-500 bg-white">
-                                        {activeStudents.filter(s => pilotFilterGrade === 'all' || s.grade === pilotFilterGrade).map(s => (
-                                           <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
-                                        ))}
-                                     </select>
-                                     <p className="text-xs text-slate-400 mt-1">Maintenez Ctrl/Cmd pour sélectionner plusieurs élèves.</p>
-                                 </div>
-                              </div>
-                           )}
-                        </div>
-
-                        {/* Chart */}
-                        {(() => {
-                           const chartData: any[] = [];
-                           const subDomains = Object.keys(pilotageData[pilotFilterDomain] || {}).sort((a,b) => a.localeCompare(b));
-
-                           subDomains.forEach((subDomain, index) => {
-                              const comps = pilotageData[pilotFilterDomain][subDomain];
-                              comps.sort((a,b) => getCode(a).localeCompare(getCode(b), undefined, { numeric: true }));
-                              
-                              comps.forEach(c => {
-                                 const codeLabel = pilotFilterGrade === 'all' ? `${getGrade(c)} - ${getCode(c)}` : getCode(c);
-                                 const dataPoint: any = {
-                                    name: codeLabel,
-                                    subDomain: subDomain === 'Sans sous-domaine' ? '' : subDomain,
-                                    cohortAvg: c.cohortAvg !== null ? Number(c.cohortAvg).toFixed(2) : null,
-                                 };
-                                 
-                                 if (isIndividualMode) {
-                                    selectedStudentIds.forEach(studentId => {
-                                       const res = results[studentId]?.[c.id];
-                                       if (res && res.isStarted) {
-                                          dataPoint[`student_${studentId}`] = res.score;
-                                       }
-                                    });
-                                 }
-                                 
-                                 chartData.push(dataPoint);
-                              });
-                              
-                              if (index < subDomains.length - 1) {
-                                 chartData.push({ name: ` `, isGap: true });
-                              }
-                           });
-
-                           if (chartData.length === 0) {
-                              return <div className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée pour cette sélection.</div>;
-                           }
-
-                           const studentColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080'];
-
-                           return (
-                              <div className="h-[500px] w-full mt-4">
-                                 <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
-                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                       <XAxis 
-                                          dataKey="name" 
-                                          angle={-45} 
-                                          textAnchor="end"
-                                          height={80}
-                                          tick={{ fontSize: 11, fill: '#475569', fontWeight: 'bold' }}
-                                          interval={0}
-                                       />
-                                       <YAxis 
-                                          domain={[0, 10]} 
-                                          ticks={[0, 2, 4, 5, 6, 8, 10]}
-                                          tick={{ fontSize: 12, fill: '#475569' }}
-                                       />
-                                       <Tooltip 
-                                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                          labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
-                                       />
-                                       <Legend verticalAlign="top" height={36} />
-                                       <ReferenceLine y={5} stroke="#22c55e" strokeWidth={1} label={{ position: 'insideTopLeft', value: 'Seuil (5/10)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
-                                       
-                                       {!isIndividualMode && (
-                                          <Line 
-                                             type="monotone" 
-                                             dataKey="cohortAvg" 
-                                             name="Moyenne Cohorte"
-                                             stroke="#4f46e5" 
-                                             strokeWidth={3}
-                                             dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
-                                             activeDot={{ r: 6 }}
-                                             connectNulls={false}
-                                          />
-                                       )}
-
-                                       {isIndividualMode && selectedStudentIds.map((studentId, idx) => {
-                                          const s = students.find(st => st.id === studentId);
-                                          return (
-                                             <Line 
-                                                key={studentId}
-                                                type="monotone" 
-                                                dataKey={`student_${studentId}`}
-                                                name={s ? `${s.firstName} ${s.lastName}` : 'Élève'}
-                                                stroke={studentColors[idx % studentColors.length]}
-                                                strokeWidth={2}
-                                                dot={{ r: 3 }}
-                                                activeDot={{ r: 5 }}
-                                                connectNulls={false}
-                                             />
-                                          );
-                                       })}
-                                    </LineChart>
-                                 </ResponsiveContainer>
-                              </div>
-                           );
-                        })()}
-                     </div>
-                   </div>
 
                    {/* Life Bar / Progression Annuelle */}
                    {(() => {
@@ -847,8 +709,191 @@ export default function App() {
                          </div>
                       );
                    })()}
-                </>
-              )}
+
+                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6 mb-8">
+                     <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                        <h3 className="font-semibold text-slate-800">Taux de réussite par compétence</h3>
+                     </div>
+                     <div className="p-6">
+                        {/* Options */}
+                        <div className="mb-6 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
+                           <label className="flex items-center gap-3 cursor-pointer shrink-0">
+                              <input type="checkbox" checked={isIndividualMode} onChange={e => setIsIndividualMode(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
+                              <span className="font-semibold text-slate-700">Positionnement individuel</span>
+                           </label>
+                           
+                           {isIndividualMode && (
+                              <div className="flex gap-3 items-center flex-1 w-full overflow-hidden">
+                                 <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Élèves :</span>
+                                 <div className="flex gap-2 overflow-x-auto pb-2 flex-1 scrollbar-thin">
+                                    {activeStudents.filter(s => pilotFilterGrade === 'all' || s.grade === pilotFilterGrade).map(s => {
+                                       const isSelected = selectedStudentIds.includes(s.id);
+                                       return (
+                                          <label key={s.id} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs cursor-pointer whitespace-nowrap transition-colors shrink-0", isSelected ? 'bg-indigo-100 border-indigo-300 text-indigo-800' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
+                                             <input 
+                                                type="checkbox" 
+                                                className="sr-only"
+                                                checked={isSelected}
+                                                onChange={(e) => {
+                                                   if (e.target.checked) setSelectedStudentIds(prev => [...prev, s.id]);
+                                                   else setSelectedStudentIds(prev => prev.filter(id => id !== s.id));
+                                                }}
+                                             />
+                                             <div className={cn("w-3 h-3 rounded flex items-center justify-center border", isSelected ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-400')}>
+                                                {isSelected && <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                             </div>
+                                             {s.firstName} {s.lastName}
+                                          </label>
+                                       );
+                                    })}
+                                 </div>
+                              </div>
+                           )}
+                        </div>
+
+                        {/* Chart */}
+                        {(() => {
+                           const chartData: any[] = [];
+                           let gapCount = 1;
+                           const domainsToIterate = pilotFilterDomain === 'all' ? Object.keys(pilotageData).sort((a,b) => a.localeCompare(b)) : (pilotageData[pilotFilterDomain] ? [pilotFilterDomain] : []);
+                           domainsToIterate.forEach((domain, domIndex) => {
+                              const subDomains = Object.keys(pilotageData[domain] || {}).sort((a,b) => a.localeCompare(b));
+
+                           subDomains.forEach((subDomain, index) => {
+                              const comps = pilotageData[domain][subDomain];
+                              comps.sort((a,b) => getCode(a).localeCompare(getCode(b), undefined, { numeric: true }));
+                              
+                              comps.forEach(c => {
+                                 const codeLabel = pilotFilterGrade === 'all' ? `${getGrade(c)} - ${getCode(c)}` : getCode(c);
+                                 const dataPoint: any = {
+                                    name: codeLabel,
+                                    domain: domain,
+                                    subDomain: subDomain === 'Sans sous-domaine' ? '' : subDomain,
+                                    cohortAvg: c.cohortAvg !== null ? Number(c.cohortAvg).toFixed(2) : null,
+                                 };
+                                 
+                                 // Cohort percentages for the background stacked bars
+                                 if (c.totalStarted > 0) {
+                                    dataPoint.pctRed = (c.red / c.totalStarted) * 100;
+                                    dataPoint.pctOrange = (c.yellow / c.totalStarted) * 100;
+                                    dataPoint.pctGreen = (c.green / c.totalStarted) * 100;
+                                 } else {
+                                    dataPoint.pctRed = 0;
+                                    dataPoint.pctOrange = 0;
+                                    dataPoint.pctGreen = 0;
+                                 }
+                                 
+                                 if (isIndividualMode) {
+                                    selectedStudentIds.forEach(studentId => {
+                                       const res = results[studentId]?.[c.id];
+                                       if (res && res.isStarted) {
+                                          dataPoint[`student_${studentId}`] = res.score;
+                                       }
+                                    });
+                                 }
+                                 
+                                 chartData.push(dataPoint);
+                              });
+                              
+                              const isLastDom = domIndex === domainsToIterate.length - 1;
+                              const isLastSub = index === subDomains.length - 1;
+                              if (!isLastDom || !isLastSub) {
+                                 chartData.push({ name: ' '.repeat(gapCount++), isGap: true });
+                              }
+                           });
+                           });
+
+                           if (chartData.length === 0) {
+                              return <div className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée pour cette sélection.</div>;
+                           }
+
+                           const studentColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#91eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080'];
+                           
+                           // Determiner si on affiche la cohorte moyenne
+                           const showCohortAvg = !isIndividualMode || selectedStudentIds.length === 0;
+
+                           return (
+                              <div className="h-[350px] w-full mt-4">
+                                 <ResponsiveContainer width="100%" height="100%">
+                                    <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
+                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                       <XAxis 
+                                          dataKey="name" 
+                                          angle={-45} 
+                                          textAnchor="end"
+                                          height={80}
+                                          tick={{ fontSize: 11, fill: '#475569', fontWeight: 'bold' }}
+                                          interval={0}
+                                       />
+                                       <YAxis 
+                                          yAxisId="left"
+                                          domain={[0, 10]} 
+                                          ticks={[0, 2, 4, 5, 6, 8, 10]}
+                                          tick={{ fontSize: 12, fill: '#475569' }}
+                                       />
+                                       <YAxis 
+                                          yAxisId="right"
+                                          orientation="right"
+                                          domain={[0, 100]}
+                                          hide={true}
+                                       />
+                                       <Tooltip 
+                                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                          labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
+                                          formatter={(value: any, name: string) => {
+                                             if (name === 'pctGreen') return [`${Number(value).toFixed(1)}%`, 'Validé (>= 5)'];
+                                             if (name === 'pctOrange') return [`${Number(value).toFixed(1)}%`, 'En cours (3-4)'];
+                                             if (name === 'pctRed') return [`${Number(value).toFixed(1)}%`, 'Non acquis (< 3)'];
+                                             return [value, name];
+                                          }}
+                                       />
+                                       <Legend verticalAlign="top" height={36} />
+                                       
+                                       {/* Background Stacked Bars */}
+                                       <Bar yAxisId="right" dataKey="pctRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={40} />
+                                       <Bar yAxisId="right" dataKey="pctOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
+                                       <Bar yAxisId="right" dataKey="pctGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
+                                       
+                                       <ReferenceLine y={5} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Seuil (5/10)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
+                                       
+                                       {showCohortAvg && (
+                                          <Line 
+                                             yAxisId="left"
+                                             type="monotone" 
+                                             dataKey="cohortAvg" 
+                                             name="Moyenne Cohorte"
+                                             stroke="#4f46e5" 
+                                             strokeWidth={3}
+                                             dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
+                                             activeDot={{ r: 6 }}
+                                             connectNulls={false}
+                                          />
+                                       )}
+
+                                       {isIndividualMode && selectedStudentIds.map((studentId, idx) => {
+                                          const s = students.find(st => st.id === studentId);
+                                          return (
+                                             <Line 
+                                                yAxisId="left"
+                                                key={studentId}
+                                                type="monotone" 
+                                                dataKey={`student_${studentId}`}
+                                                name={s ? `${s.firstName} ${s.lastName}` : 'Élève'}
+                                                stroke={studentColors[idx % studentColors.length]}
+                                                strokeWidth={2}
+                                                dot={{ r: 3 }}
+                                                activeDot={{ r: 5 }}
+                                                connectNulls={false}
+                                             />
+                                          );
+                                       })}
+                                    </ComposedChart>
+                                 </ResponsiveContainer>
+                              </div>
+                           );
+                        })()}
+                     </div>
+                   </div>
             </div>
           </div>
         </div>
