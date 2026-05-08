@@ -67,6 +67,7 @@ export default function App() {
   // Pilotage Individual Positioning Mode
   const [isIndividualMode, setIsIndividualMode] = useState<boolean>(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [diagFilterGrade, setDiagFilterGrade] = useState<string>('all');
 
   const [statusMsg, setStatusMsg] = useState('');
 
@@ -394,6 +395,54 @@ export default function App() {
       .map(c => c.subDomain)
       .filter(Boolean)
   ));
+
+  const calculateStudentStock = useCallback((studentId: string) => {
+    let stock = 0;
+    const compMap = results[studentId];
+    if (compMap) {
+      Object.values(compMap).forEach(res => {
+         if (res && res.isStarted && res.score !== undefined) {
+            stock += res.score;
+         }
+      });
+    }
+    return stock;
+  }, [results]);
+
+  const diagnosticData = useMemo(() => {
+    const relevantStudents = activeStudents.filter(s => diagFilterGrade === 'all' || s.grade === diagFilterGrade);
+    const studentsWithStock = relevantStudents.map(s => {
+       return { ...s, stock: calculateStudentStock(s.id) };
+    });
+
+    const topStudents = [...studentsWithStock].sort((a, b) => b.stock - a.stock).slice(0, 5);
+    const bottomStudents = [...studentsWithStock].sort((a, b) => a.stock - b.stock).slice(0, 5);
+
+    // Filter competences
+    const relevantComps = competences.filter(c => diagFilterGrade === 'all' || getGrade(c) === diagFilterGrade);
+    const compsWithAvg = relevantComps.map(c => {
+       const studentsForComp = activeStudents.filter(s => s.grade === getGrade(c));
+       let sum = 0;
+       let count = 0;
+       studentsForComp.forEach(s => {
+          const res = results[s.id]?.[c.id];
+          if (res && res.isStarted && res.score !== undefined) {
+             sum += res.score;
+             count++;
+          }
+       });
+       return { 
+         ...c, 
+         avg: count > 0 ? sum / count : null,
+         count
+       };
+    }).filter(c => c.count > 0 && c.avg !== null);
+
+    const topComps = [...compsWithAvg].sort((a, b) => (b.avg as number) - (a.avg as number)).slice(0, 3);
+    const bottomComps = [...compsWithAvg].sort((a, b) => (a.avg as number) - (b.avg as number)).slice(0, 3);
+
+    return { topStudents, bottomStudents, topComps, bottomComps };
+  }, [competences, activeStudents, results, diagFilterGrade, getGrade, calculateStudentStock]);
 
   const handleToggleEditMode = () => {
     if (isEditMode) {
@@ -801,8 +850,84 @@ export default function App() {
                       );
                    })()}
 
-                   {/* Graphique */}
+                   {/* Diagnostic Stratégique */}
                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                         <h3 className="font-semibold text-slate-800">Diagnostic Stratégique</h3>
+                         <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-slate-600">Niveau</label>
+                            <select value={diagFilterGrade} onChange={e => setDiagFilterGrade(e.target.value)} className="px-2 py-1 bg-white border border-slate-300 rounded text-xs font-medium focus:ring-2 focus:ring-indigo-500">
+                               <option value="all">Tous</option>
+                               {uniqueGrades.map(g => <option key={g} value={g}>{g}</option>)}
+                            </select>
+                         </div>
+                      </div>
+                      <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                         {/* Alertes */}
+                         <div>
+                            <h4 className="text-sm font-semibold text-rose-700 mb-3 flex items-center justify-between">
+                               <span>Alertes (Plus faibles stocks)</span>
+                            </h4>
+                            <ul className="space-y-2">
+                               {diagnosticData.bottomStudents.map(s => (
+                                  <li key={s.id} className="flex items-center justify-between p-2 rounded bg-rose-50 border border-rose-100 text-sm">
+                                     <span className="font-medium text-slate-700">{s.firstName} {s.lastName} <span className="text-xs text-slate-500">({s.grade})</span></span>
+                                     <span className="font-bold text-rose-600">{s.stock} pts</span>
+                                  </li>
+                               ))}
+                               {diagnosticData.bottomStudents.length === 0 && <li className="text-xs text-slate-400 italic">Aucune donnée.</li>}
+                            </ul>
+                         </div>
+                         {/* Excellence */}
+                         <div>
+                            <h4 className="text-sm font-semibold text-emerald-700 mb-3 flex items-center justify-between">
+                               <span>Excellence (Meilleurs stocks)</span>
+                            </h4>
+                            <ul className="space-y-2">
+                               {diagnosticData.topStudents.map(s => (
+                                  <li key={s.id} className="flex items-center justify-between p-2 rounded bg-emerald-50 border border-emerald-100 text-sm">
+                                     <span className="font-medium text-slate-700">{s.firstName} {s.lastName} <span className="text-xs text-slate-500">({s.grade})</span></span>
+                                     <span className="font-bold text-emerald-600">{s.stock} pts</span>
+                                  </li>
+                               ))}
+                               {diagnosticData.topStudents.length === 0 && <li className="text-xs text-slate-400 italic">Aucune donnée.</li>}
+                            </ul>
+                         </div>
+                         {/* Notions à besoins */}
+                         <div>
+                            <h4 className="text-sm font-semibold text-amber-700 mb-3 flex items-center justify-between">
+                               <span>Notions à besoins (Moy. faibles)</span>
+                            </h4>
+                            <ul className="space-y-2">
+                               {diagnosticData.bottomComps.map(c => (
+                                  <li key={c.id} className="flex items-center justify-between p-2 rounded bg-amber-50 border border-amber-100 text-sm">
+                                     <span className="font-medium text-slate-700 truncate mr-2" title={c.title}>{getCode(c)} - {c.title}</span>
+                                     <span className="font-bold text-amber-600 whitespace-nowrap">{c.avg?.toFixed(1)} / 10</span>
+                                  </li>
+                               ))}
+                               {diagnosticData.bottomComps.length === 0 && <li className="text-xs text-slate-400 italic">Aucune donnée.</li>}
+                            </ul>
+                         </div>
+                         {/* Notions réussies */}
+                         <div>
+                            <h4 className="text-sm font-semibold text-indigo-700 mb-3 flex items-center justify-between">
+                               <span>Notions réussies (Moy. hautes)</span>
+                            </h4>
+                            <ul className="space-y-2">
+                               {diagnosticData.topComps.map(c => (
+                                  <li key={c.id} className="flex items-center justify-between p-2 rounded bg-indigo-50 border border-indigo-100 text-sm">
+                                     <span className="font-medium text-slate-700 truncate mr-2" title={c.title}>{getCode(c)} - {c.title}</span>
+                                     <span className="font-bold text-indigo-600 whitespace-nowrap">{c.avg?.toFixed(1)} / 10</span>
+                                  </li>
+                               ))}
+                               {diagnosticData.topComps.length === 0 && <li className="text-xs text-slate-400 italic">Aucune donnée.</li>}
+                            </ul>
+                         </div>
+                      </div>
+                   </div>
+
+                   {/* Graphique */}
+                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
                      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
                         <h3 className="font-semibold text-slate-800">Taux de réussite par compétence</h3>
                      </div>
@@ -860,10 +985,13 @@ export default function App() {
                                     
                                     if (isIndividualMode) {
                                        selectedStudentIds.forEach(studentId => {
-                                          const res = results[studentId]?.[c.id];
-                                          if (res && res.isStarted && res.score !== undefined) {
-                                             dataPoint[`student_${studentId}`] = res.score;
-                                             dataPoint[`student_${studentId}_scaled`] = scaleValue(res.score);
+                                          const s = students.find(st => st.id === studentId);
+                                          if (s && s.grade === getGrade(c)) {
+                                             const res = results[studentId]?.[c.id];
+                                             if (res && res.isStarted && res.score !== undefined) {
+                                                dataPoint[`student_${studentId}`] = res.score;
+                                                dataPoint[`student_${studentId}_scaled`] = scaleValue(res.score);
+                                             }
                                           }
                                        });
                                     }
@@ -935,7 +1063,10 @@ export default function App() {
                                                 const originalKey = props.dataKey.replace('_scaled', '');
                                                 const originalValue = payload[originalKey];
                                                 if (originalValue !== undefined) {
-                                                   return [!Number.isInteger(originalValue) ? Number(originalValue).toFixed(1) : originalValue, name];
+                                                   const studentId = originalKey.replace('student_', '');
+                                                   const stock = calculateStudentStock(studentId);
+                                                   const formatVal = !Number.isInteger(originalValue) ? Number(originalValue).toFixed(1) : originalValue;
+                                                   return [`Note: ${formatVal} (Total: ${stock} pts)`, name];
                                                 }
                                              }
                                              
