@@ -808,6 +808,11 @@ export default function App() {
                      </div>
                      <div className="p-6">
                         {(() => {
+                           const scaleValue = (score: number) => {
+                              if (score <= 5) return score * 16;
+                              return 80 + (score - 5) * 4;
+                           };
+
                            const chartData: any[] = [];
                            let gapCount = 1;
                            // On s'assure que si un domaine est sélectionné, on n'itère QUE sur lui. 
@@ -835,7 +840,9 @@ export default function App() {
                                        cohortAvg: c.cohortAvg !== null ? Number(c.cohortAvg).toFixed(2) : null,
                                     };
                                     
-                                    // Cohort percentages for the background stacked bars
+                                    dataPoint.cohortAvgScaled = c.cohortAvg !== null && c.cohortAvg !== undefined ? scaleValue(Number(c.cohortAvg)) : null;
+
+                                    // Cohort percentages for the tooltip
                                     if (c.totalStarted > 0) {
                                        dataPoint.pctRed = (c.red / c.totalStarted) * 100;
                                        dataPoint.pctOrange = (c.yellow / c.totalStarted) * 100;
@@ -845,12 +852,18 @@ export default function App() {
                                        dataPoint.pctOrange = 0;
                                        dataPoint.pctGreen = 0;
                                     }
+
+                                    // Background scale zones (fixed heights that stack up to exactly 100 on the left scale)
+                                    dataPoint.zoneRed = 48;    // from 0 to 48 (score 3)
+                                    dataPoint.zoneOrange = 32; // from 48 to 80 (score 5)
+                                    dataPoint.zoneGreen = 20;  // from 80 to 100 (score 10)
                                     
                                     if (isIndividualMode) {
                                        selectedStudentIds.forEach(studentId => {
                                           const res = results[studentId]?.[c.id];
-                                          if (res && res.isStarted) {
+                                          if (res && res.isStarted && res.score !== undefined) {
                                              dataPoint[`student_${studentId}`] = res.score;
+                                             dataPoint[`student_${studentId}_scaled`] = scaleValue(res.score);
                                           }
                                        });
                                     }
@@ -889,44 +902,60 @@ export default function App() {
                                        />
                                        <YAxis 
                                           yAxisId="left"
-                                          domain={[0, 10]} 
-                                          ticks={[0, 2, 4, 5, 6, 8, 10]}
+                                          domain={[0, 100]} 
+                                          ticks={[0, 32, 64, 80, 84, 92, 100]}
+                                          tickFormatter={(val) => {
+                                             if (val <= 80) return String(Math.round(val / 16));
+                                             return String(Math.round(5 + (val - 80) / 4));
+                                          }}
                                           tick={{ fontSize: 12, fill: '#475569' }}
-                                       />
-                                       <YAxis 
-                                          yAxisId="right"
-                                          orientation="right"
-                                          domain={[0, 100]}
-                                          hide={true}
                                        />
                                        <Tooltip 
                                           contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                           labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
                                           formatter={(value: any, name: string, props: any) => {
-                                             if (name === 'Validé (>= 5)' || name === 'En cours (3-4)' || name === 'Non acquis (< 3)') {
-                                                return [`${Number(value).toFixed(1)} %`, name];
+                                             const payload = props.payload || {};
+                                             
+                                             if (name === 'Validé (>= 5)') {
+                                                return [payload.pctGreen !== undefined ? `${Number(payload.pctGreen).toFixed(1)} %` : '0.0 %', name];
                                              }
-                                             // Pour la moyenne de cohorte ou les élèves
-                                             if (typeof value === 'number') {
-                                                return [!Number.isInteger(value) ? Number(value).toFixed(1) : value, name];
+                                             if (name === 'En cours (3-4)') {
+                                                return [payload.pctOrange !== undefined ? `${Number(payload.pctOrange).toFixed(1)} %` : '0.0 %', name];
                                              }
+                                             if (name === 'Non acquis (< 3)') {
+                                                return [payload.pctRed !== undefined ? `${Number(payload.pctRed).toFixed(1)} %` : '0.0 %', name];
+                                             }
+                                             
+                                             if (name === 'Moyenne Cohorte') {
+                                                return [payload.cohortAvg !== null && payload.cohortAvg !== undefined ? Number(payload.cohortAvg).toFixed(1) : value, name];
+                                             }
+                                             
+                                             // Pour les élèves : on récupère la valeur non-transformée
+                                             if (props.dataKey && typeof props.dataKey === 'string' && props.dataKey.endsWith('_scaled')) {
+                                                const originalKey = props.dataKey.replace('_scaled', '');
+                                                const originalValue = payload[originalKey];
+                                                if (originalValue !== undefined) {
+                                                   return [!Number.isInteger(originalValue) ? Number(originalValue).toFixed(1) : originalValue, name];
+                                                }
+                                             }
+                                             
                                              return [value, name];
                                           }}
                                        />
                                        <Legend verticalAlign="top" height={36} />
                                        
-                                       {/* Background Stacked Bars */}
-                                       <Bar yAxisId="right" dataKey="pctRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={15} />
-                                       <Bar yAxisId="right" dataKey="pctOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
-                                       <Bar yAxisId="right" dataKey="pctGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
+                                       {/* Background Stacked Bars via constant zones */}
+                                       <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={15} />
+                                       <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
+                                       <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
                                        
-                                       <ReferenceLine y={5} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Seuil (5/10)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
+                                       <ReferenceLine y={80} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Seuil (5/10)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
                                        
                                        {showCohortAvg && (
                                           <Line 
                                              yAxisId="left"
                                              type="monotone" 
-                                             dataKey="cohortAvg" 
+                                             dataKey="cohortAvgScaled" 
                                              name="Moyenne Cohorte"
                                              stroke="#4f46e5" 
                                              strokeWidth={3}
@@ -944,7 +973,7 @@ export default function App() {
                                                 yAxisId="left"
                                                 key={studentId}
                                                 type="monotone" 
-                                                dataKey={`student_${studentId}`}
+                                                dataKey={`student_${studentId}_scaled`}
                                                 name={labelName}
                                                 stroke={studentColors[idx % studentColors.length]}
                                                 strokeWidth={2}
