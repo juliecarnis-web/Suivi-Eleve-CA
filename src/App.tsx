@@ -921,7 +921,7 @@ export default function App() {
                                     if (isIndividualMode) {
                                        selectedStudentIds.forEach(studentId => {
                                           const s = students.find(st => st.id === studentId);
-                                          if (s && s.grade === getGrade(c)) {
+                                          if (s) {
                                              const res = results[studentId]?.[c.id];
                                              if (res && res.isStarted && res.score !== undefined) {
                                                 dataPoint[`student_${studentId}`] = res.score;
@@ -1033,7 +1033,7 @@ export default function App() {
                                              strokeWidth={3}
                                              dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
                                              activeDot={{ r: 6 }}
-                                             connectNulls={false}
+                                             connectNulls={true}
                                           />
                                        )}
 
@@ -1051,7 +1051,7 @@ export default function App() {
                                                 strokeWidth={2}
                                                 dot={{ r: 3 }}
                                                 activeDot={{ r: 5 }}
-                                                connectNulls={false}
+                                                connectNulls={true}
                                              />
                                           );
                                        })}
