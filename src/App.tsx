@@ -212,7 +212,7 @@ export default function App() {
      setIsSavingObs(true);
      setObsFeedback('');
      try {
-        await fetch('/api/upsert', {
+        const res = await fetch('/api/upsert', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
@@ -221,6 +221,7 @@ export default function App() {
               content
            })
         });
+        if (!res.ok) throw new Error('Failed to save');
         setObsFeedback('✅ Enregistré');
         setTimeout(() => setObsFeedback(''), 2000);
      } catch (e) {
