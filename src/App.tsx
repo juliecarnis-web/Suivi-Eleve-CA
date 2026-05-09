@@ -447,7 +447,7 @@ export default function App() {
          avg: count > 0 ? sum / count : null,
          count
        };
-    }).filter(c => c.count >= 3 && c.avg !== null);
+    }).filter(c => c.count >= 3 && c.avg !== null && c.avg > 0);
 
     const topComps = [...compsWithAvg].sort((a, b) => (b.avg as number) - (a.avg as number)).slice(0, 3);
     const bottomComps = [...compsWithAvg].sort((a, b) => (a.avg as number) - (b.avg as number)).slice(0, 3);
