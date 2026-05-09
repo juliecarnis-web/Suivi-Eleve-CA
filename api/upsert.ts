@@ -95,6 +95,28 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ success: true });
       }
 
+      // 6. RECUPERER UNE OBSERVATION
+      if (body.type === 'observation_fetch' || body.action === 'get_observation') {
+        const obs = await sql`
+          SELECT content FROM observations 
+          WHERE student_id = ${body.studentId}
+        `;
+        const content = obs.length > 0 ? obs[0].content : '';
+        return res.status(200).json({ content });
+      }
+
+      // 7. UPSERT OBSERVATION
+      if (body.type === 'observation') {
+        await sql`
+          INSERT INTO observations (student_id, content, updated_at)
+          VALUES (${body.studentId}, ${body.content}, NOW())
+          ON CONFLICT (student_id) DO UPDATE SET
+            content = EXCLUDED.content,
+            updated_at = NOW()
+        `;
+        return res.status(200).json({ success: true });
+      }
+
     } catch (error: any) {
       console.error("Erreur API détaillée:", error);
       return res.status(500).json({ error: error.message });
