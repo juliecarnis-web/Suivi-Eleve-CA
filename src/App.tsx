@@ -546,14 +546,17 @@ export default function App() {
         return activeStudents.some(st => results[st.id]?.[c.id]?.isStarted);
      });
 
-     const domainMap: Record<string, { studentSum: number, cohortSum: number, count: number }> = {};
+     const domainMap: Record<string, { studentSum: number, studentStartedCount: number, cohortSum: number, cohortStartedCount: number }> = {};
      
      startedComps.forEach(c => {
         const d = getDomain(c) || 'Sans domaine';
-        if (!domainMap[d]) domainMap[d] = { studentSum: 0, cohortSum: 0, count: 0 };
+        if (!domainMap[d]) domainMap[d] = { studentSum: 0, studentStartedCount: 0, cohortSum: 0, cohortStartedCount: 0 };
         
         const sRes = results[student.id]?.[c.id];
-        const sScore = (sRes && sRes.isStarted && sRes.score !== undefined) ? sRes.score : 0;
+        if (sRes && sRes.isStarted && sRes.score !== undefined) {
+           domainMap[d].studentSum += sRes.score;
+           domainMap[d].studentStartedCount += 1;
+        }
         
         let cohortSumScore = 0;
         let initCount = 0;
@@ -564,18 +567,20 @@ export default function App() {
                initCount++;
            }
         });
-        const cohortAvg = initCount > 0 ? cohortSumScore / initCount : 0;
-
-        domainMap[d].studentSum += sScore;
-        domainMap[d].cohortSum += cohortAvg;
-        domainMap[d].count += 1;
+        
+        if (initCount > 0) {
+           domainMap[d].cohortSum += (cohortSumScore / initCount);
+           domainMap[d].cohortStartedCount += 1;
+        }
      });
 
      return Object.keys(domainMap).sort((a,b) => a.localeCompare(b)).map(d => {
         const info = domainMap[d];
-        const maxScore = info.count * 5;
-        const studentPct = maxScore > 0 ? (info.studentSum / maxScore) * 100 : 0;
-        const cohortPct = maxScore > 0 ? (info.cohortSum / maxScore) * 100 : 0;
+        const studentMaxScore = info.studentStartedCount * 5;
+        const cohortMaxScore = info.cohortStartedCount * 5;
+        
+        const studentPct = studentMaxScore > 0 ? (info.studentSum / studentMaxScore) * 100 : 0;
+        const cohortPct = cohortMaxScore > 0 ? (info.cohortSum / cohortMaxScore) * 100 : 0;
         
         return {
            name: d,
@@ -1364,7 +1369,14 @@ export default function App() {
                 <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 bg-white min-w-0">
                    {/* Graphique Bilan */}
                    <div className="min-w-0">
-                      <h3 className="font-semibold text-slate-800 mb-4">Graphique Bilan ( vs Moy. Classe )</h3>
+                      <div className="flex flex-col xl:flex-row xl:items-center justify-between mb-4 gap-2">
+                         <h3 className="font-semibold text-slate-800">Graphique Bilan ( vs Moy. Classe )</h3>
+                         {portailStudentId && (
+                            <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-md border border-indigo-100 whitespace-nowrap self-start xl:self-auto">
+                               Total des réussites : {calculateStudentStock(portailStudentId)} briques cumulées
+                            </span>
+                         )}
+                      </div>
                       {portailStudentId && chartPortailData.length > 0 ? (
                          <div className="h-[250px] w-full min-w-0">
                             <ResponsiveContainer width="100%" height="100%">
