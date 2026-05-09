@@ -98,34 +98,29 @@ export default function ParentPage() {
 
      return Object.keys(domainMap).sort((a,b) => a.localeCompare(b)).map(d => {
         const info = domainMap[d];
-        const studentMaxScore = info.studentStartedCount * 10;
-        const cohortMaxScore = info.cohortStartedCount * 10;
-        
-        const studentPct = studentMaxScore > 0 ? (info.studentSum / studentMaxScore) * 100 : 0;
-        const cohortPct = cohortMaxScore > 0 ? (info.cohortSum / cohortMaxScore) * 100 : 0;
+        const studentRawScore = info.studentStartedCount > 0 ? (info.studentSum / info.studentStartedCount) : 0;
+        const cohortRawScore = info.cohortStartedCount > 0 ? (info.cohortSum / info.cohortStartedCount) : 0;
         
         return {
            name: d,
-           studentPct,
-           cohortPct,
+           studentRawScore,
+           cohortRawScore,
            studentPoints: info.studentSum,
            cohortPoints: info.cohortSum,
         };
      });
   }, [student, activeStudents, competences, results, getGrade, getDomain]);
 
+  const scaleScore = (val: number) => val <= 5 ? (val * 1.6) : (8 + (val - 5) * 0.4);
+
   const chartPortailData = useMemo(() => {
      return portailDomainData.map((d) => ({
-        name: d.name,
-        studentPct: d.studentPct,
-        cohortPct: d.cohortPct,
-        studentPoints: d.studentPoints,
-        cohortPoints: d.cohortPoints,
-        studentScaled: d.studentPct,
-        cohortScaled: d.cohortPct,
-        zoneRed: 30,
-        zoneOrange: 20,
-        zoneGreen: 50
+        ...d,
+        studentScaled: scaleScore(d.studentRawScore),
+        cohortScaled: scaleScore(d.cohortRawScore),
+        zoneRed: 4.8,
+        zoneOrange: 3.2,
+        zoneGreen: 2.0
      }));
   }, [portailDomainData]);
 
@@ -197,9 +192,12 @@ export default function ParentPage() {
                         />
                         <YAxis 
                            yAxisId="left"
-                           domain={[0, 100]} 
-                           ticks={[0, 20, 40, 60, 80, 100]}
-                           tickFormatter={(val) => `${val}%`}
+                           domain={[0, 10]} 
+                           ticks={[0, 1.6, 3.2, 4.8, 6.4, 8, 8.8, 9.6, 10]}
+                           tickFormatter={(val) => {
+                              if (val <= 8) return `${Math.round((val / 1.6) * 20)}%`;
+                              return `${Math.round((5 + (val - 8) / 0.4) * 20)}%`;
+                           }}
                            tick={{ fontSize: 11, fill: '#64748b' }}
                            axisLine={false}
                            tickLine={false}
@@ -210,8 +208,8 @@ export default function ParentPage() {
                            cursor={{fill: '#f1f5f9'}}
                            formatter={(value: any, name: string, props: any) => {
                               const payload = props.payload || {};
-                              if (name === 'Élève') return [`${payload.studentPoints?.toFixed(1) || 0} briques`, `Moyenne élève`];
-                              if (name === 'Moyenne Classe') return [`${payload.cohortPoints?.toFixed(1) || 0} briques`, `Moyenne classe`];
+                              if (name === 'Élève') return [`${payload.studentRawScore?.toFixed(1) || 0} / 10`, `Moyenne élève`];
+                              if (name === 'Moyenne Classe') return [`${payload.cohortRawScore?.toFixed(1) || 0} / 10`, `Moyenne classe`];
                               return [value, name];
                            }}
                         />
@@ -219,7 +217,7 @@ export default function ParentPage() {
                         <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#fee2e2" opacity={0.6} name="Non acquis (< 3)" barSize={12} radius={[0,0,4,4]} />
                         <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#fef3c7" opacity={0.6} name="En cours (3-4)" />
                         <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#d1fae5" opacity={0.6} name="Validé (>= 5)" radius={[4,4,0,0]} />
-                        <ReferenceLine y={50} yAxisId="left" stroke="#10b981" strokeWidth={2} strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Seuil (50%)', fill: '#10b981', fontSize: 11, fontWeight: 'bold' }} />
+                        <ReferenceLine y={8} yAxisId="left" stroke="#10b981" strokeWidth={2} strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Objectif Atteint (100%)', fill: '#10b981', fontSize: 11, fontWeight: 'bold' }} />
                         <Line 
                            yAxisId="left"
                            type="monotone" 

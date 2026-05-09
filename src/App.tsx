@@ -586,34 +586,29 @@ export default function App() {
 
      return Object.keys(domainMap).sort((a,b) => a.localeCompare(b)).map(d => {
         const info = domainMap[d];
-        const studentMaxScore = info.studentStartedCount * 10;
-        const cohortMaxScore = info.cohortStartedCount * 10;
-        
-        const studentPct = studentMaxScore > 0 ? (info.studentSum / studentMaxScore) * 100 : 0;
-        const cohortPct = cohortMaxScore > 0 ? (info.cohortSum / cohortMaxScore) * 100 : 0;
+        const studentRawScore = info.studentStartedCount > 0 ? (info.studentSum / info.studentStartedCount) : 0;
+        const cohortRawScore = info.cohortStartedCount > 0 ? (info.cohortSum / info.cohortStartedCount) : 0;
         
         return {
            name: d,
-           studentPct,
-           cohortPct,
+           studentRawScore,
+           cohortRawScore,
            studentPoints: info.studentSum,
            cohortPoints: info.cohortSum,
         };
      });
   }, [portailStudentId, activeStudents, competences, results, getGrade, getDomain]);
 
+  const scaleScore = (val: number) => val <= 5 ? (val * 1.6) : (8 + (val - 5) * 0.4);
+
   const chartPortailData = useMemo(() => {
      return portailDomainData.map((d) => ({
-        name: d.name,
-        studentPct: d.studentPct,
-        cohortPct: d.cohortPct,
-        studentPoints: d.studentPoints,
-        cohortPoints: d.cohortPoints,
-        studentScaled: d.studentPct,
-        cohortScaled: d.cohortPct,
-        zoneRed: 30,
-        zoneOrange: 20,
-        zoneGreen: 50
+        ...d,
+        studentScaled: scaleScore(d.studentRawScore),
+        cohortScaled: scaleScore(d.cohortRawScore),
+        zoneRed: 4.8,
+        zoneOrange: 3.2,
+        zoneGreen: 2.0
      }));
   }, [portailDomainData]);
 
@@ -622,20 +617,22 @@ export default function App() {
   const goNextPortail = () => { if (portailCurrentIndex >= 0 && portailCurrentIndex < portailStudents.length - 1) setPortailStudentId(portailStudents[portailCurrentIndex + 1].id); };
 
   const handleCopyBilan = () => {
-     const student = activeStudents.find(s => s.id === portailStudentId);
-     if (!student) return;
-     const lines = [`${student.firstName} ${student.lastName}`];
-     portailDomainData.forEach(d => {
-        lines.push(`- ${d.name} : ${d.studentPct.toFixed(1)}%`);
-     });
-     lines.push('');
-     lines.push('Observations :');
-     lines.push(portailObservation || 'Aucune observation.');
-     
-     navigator.clipboard.writeText(lines.join('\n'));
-     setCopierFeedback('Copié !');
-     setTimeout(() => setCopierFeedback(''), 2000);
-  };
+  const student = activeStudents.find(s => s.id === portailStudentId);
+  if (!student) return;
+  const lines = [`${student.firstName} ${student.lastName}`];
+  portailDomainData.forEach(d => {
+    // On calcule le pourcentage réel basé sur l'objectif de 5
+    const realPercentage = (d.studentRawScore / 5) * 100;
+    lines.push(`- ${d.name} : ${realPercentage.toFixed(1)}%`);
+  });
+  lines.push('');
+  lines.push('Observations :');
+  lines.push(portailObservation || 'Aucune observation.');
+  
+  navigator.clipboard.writeText(lines.join('\n'));
+  setCopierFeedback('Copié !');
+  setTimeout(() => setCopierFeedback(''), 2000);
+};
 
   const handleLienParent = () => {
      const url = `${window.location.origin}/parent?auth=${portailStudentId}`;
@@ -1061,9 +1058,9 @@ export default function App() {
                      </div>
                      <div className="p-6">
                         {(() => {
-                           const scaleValue = (score: number) => {
-                              if (score <= 5) return score * 16;
-                              return 80 + (score - 5) * 4;
+                           const scaleScore = (score: number) => {
+                              if (score <= 5) return score * 1.6;
+                              return 8 + (score - 5) * 0.4;
                            };
 
                            const chartData: any[] = [];
@@ -1096,7 +1093,7 @@ export default function App() {
                                        cohortAvg: c.cohortAvg !== null ? Number(c.cohortAvg).toFixed(2) : null,
                                     };
                                     
-                                    dataPoint[`cohortAvgScaled_blk_${currentBlockIndex}`] = c.cohortAvg !== null && c.cohortAvg !== undefined ? scaleValue(Number(c.cohortAvg)) : null;
+                                    dataPoint[`cohortAvgScaled_blk_${currentBlockIndex}`] = c.cohortAvg !== null && c.cohortAvg !== undefined ? scaleScore(Number(c.cohortAvg)) : null;
 
                                     // Cohort percentages for the tooltip
                                     if (c.totalStarted > 0) {
@@ -1109,10 +1106,10 @@ export default function App() {
                                        dataPoint.pctGreen = 0;
                                     }
 
-                                    // Background scale zones (fixed heights that stack up to exactly 100 on the left scale)
-                                    dataPoint.zoneRed = 48;    // from 0 to 48 (score 3)
-                                    dataPoint.zoneOrange = 32; // from 48 to 80 (score 5)
-                                    dataPoint.zoneGreen = 20;  // from 80 to 100 (score 10)
+                                    // Background scale zones (fixed heights that stack up to exactly 10 on the left scale)
+                                    dataPoint.zoneRed = 4.8;    // from 0 to 4.8 (score 3)
+                                    dataPoint.zoneOrange = 3.2; // from 4.8 to 8 (score 5)
+                                    dataPoint.zoneGreen = 2.0;  // from 8 to 10 (score 10)
                                     
                                     if (isIndividualMode) {
                                        selectedStudentIds.forEach(studentId => {
@@ -1121,7 +1118,7 @@ export default function App() {
                                              const res = results[studentId]?.[c.id];
                                              if (res && res.isStarted && res.score !== undefined) {
                                                 dataPoint[`student_${studentId}`] = res.score;
-                                                dataPoint[`student_${studentId}_scaled_blk_${currentBlockIndex}`] = scaleValue(res.score);
+                                                dataPoint[`student_${studentId}_scaled_blk_${currentBlockIndex}`] = scaleScore(res.score);
                                              }
                                           }
                                        });
@@ -1163,11 +1160,11 @@ export default function App() {
                                        />
                                        <YAxis 
                                           yAxisId="left"
-                                          domain={[0, 100]} 
-                                          ticks={[0, 32, 64, 80, 84, 92, 100]}
+                                          domain={[0, 10]} 
+                                          ticks={[0, 1.6, 3.2, 4.8, 6.4, 8, 8.8, 9.6, 10]}
                                           tickFormatter={(val) => {
-                                             if (val <= 80) return String(Math.round(val / 16));
-                                             return String(Math.round(5 + (val - 80) / 4));
+                                             if (val <= 8) return String(Math.round(val / 1.6));
+                                             return String(Math.round(5 + (val - 8) / 0.4));
                                           }}
                                           tick={{ fontSize: 12, fill: '#475569' }}
                                        />
@@ -1220,7 +1217,7 @@ export default function App() {
                                        <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
                                        <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
                                        
-                                       <ReferenceLine y={80} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Seuil (5/10)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
+                                       <ReferenceLine y={8} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Objectif Atteint (100%)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
                                        
                                        {showCohortAvg && Array.from({length: totalBlocks}).map((_, blkIdx) => (
                                           <Line 
@@ -1407,9 +1404,12 @@ export default function App() {
                                   />
                                   <YAxis 
                                      yAxisId="left"
-                                     domain={[0, 100]} 
-                                     ticks={[0, 20, 40, 60, 80, 100]}
-                                     tickFormatter={(val) => `${val}%`}
+                                     domain={[0, 10]} 
+                                     ticks={[0, 1.6, 3.2, 4.8, 6.4, 8, 8.8, 9.6, 10]}
+                                     tickFormatter={(val) => {
+                                        if (val <= 8) return `${Math.round((val / 1.6) * 20)}%`;
+                                        return `${Math.round((5 + (val - 8) / 0.4) * 20)}%`;
+                                     }}
                                      tick={{ fontSize: 12, fill: '#475569' }}
                                   />
                                   <Tooltip 
@@ -1417,8 +1417,8 @@ export default function App() {
                                      labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
                                      formatter={(value: any, name: string, props: any) => {
                                         const payload = props.payload || {};
-                                        if (name === 'Élève') return [`${payload.studentPoints?.toFixed(1) || 0} briques`, `Moyenne élève`];
-                                        if (name === 'Moyenne Classe') return [`${payload.cohortPoints?.toFixed(1) || 0} briques`, `Moyenne classe`];
+                                        if (name === 'Élève') return [`${payload.studentRawScore?.toFixed(1) || 0} / 10`, `Moyenne élève`];
+                                        if (name === 'Moyenne Classe') return [`${payload.cohortRawScore?.toFixed(1) || 0} / 10`, `Moyenne classe`];
                                         return [value, name];
                                      }}
                                   />
@@ -1426,7 +1426,7 @@ export default function App() {
                                   <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={15} />
                                   <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
                                   <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
-                                  <ReferenceLine y={50} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Seuil (50%)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
+                                  <ReferenceLine y={8} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Objectif Atteint (100%)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
                                   <Line 
                                      yAxisId="left"
                                      type="monotone" 
