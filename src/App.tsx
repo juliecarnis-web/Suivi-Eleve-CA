@@ -69,6 +69,15 @@ export default function App() {
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [diagFilterGrade, setDiagFilterGrade] = useState<string>('all');
 
+  // Portail Individuel State
+  const [portailGrade, setPortailGrade] = useState<string>('all');
+  const [portailStudentId, setPortailStudentId] = useState<string>('');
+  const [portailObservation, setPortailObservation] = useState<string>('');
+  const [isSavingObs, setIsSavingObs] = useState(false);
+  const [obsFeedback, setObsFeedback] = useState('');
+  const [copierFeedback, setCopierFeedback] = useState('');
+  const [lienFeedback, setLienFeedback] = useState('');
+
   const [statusMsg, setStatusMsg] = useState('');
 
   // --- Fetching Logic ---
@@ -183,6 +192,44 @@ export default function App() {
         console.error('Erreur switch compétences', e);
      }
   }, [students]);
+
+  const fetchObservations = useCallback(async (studentId: string) => {
+     try {
+       const resPost = await fetch('/api/upsert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get_observation', type: 'observation_fetch', studentId }) 
+       });
+       if (resPost.ok) {
+         const data = await resPost.json();
+         return data.content || data.observation || '';
+       }
+     } catch(e) { console.error('fetchObservations error:', e); }
+     return '';
+  }, []);
+
+  const saveObservation = useCallback(async (studentId: string, content: string) => {
+     setIsSavingObs(true);
+     setObsFeedback('');
+     try {
+        await fetch('/api/upsert', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+              type: 'observation',
+              studentId,
+              content
+           })
+        });
+        setObsFeedback('✅ Enregistré');
+        setTimeout(() => setObsFeedback(''), 2000);
+     } catch (e) {
+        console.error(e);
+        setObsFeedback('❌ Erreur');
+     } finally {
+        setIsSavingObs(false);
+     }
+  }, []);
 
   // --- Admin Methods ---
   const handleClearTable = async (tableName: 'Student' | 'Competence' | 'Result') => {
@@ -454,6 +501,128 @@ export default function App() {
 
     return { topStudents, bottomStudents, topComps, bottomComps };
   }, [competences, activeStudents, results, diagFilterGrade, getGrade, calculateStudentStock]);
+
+  // --- Portail Individuel Logic ---
+  const portailStudents = useMemo(() => {
+     if (portailGrade === 'all') return activeStudents;
+     return activeStudents.filter(s => s.grade === portailGrade);
+  }, [activeStudents, portailGrade]);
+
+  useEffect(() => {
+     if (portailStudents.length > 0) {
+        if (!portailStudentId || !portailStudents.find(s => s.id === portailStudentId)) {
+           setPortailStudentId(portailStudents[0].id);
+        }
+     } else {
+        setPortailStudentId('');
+     }
+  }, [portailStudents, portailStudentId]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (portailStudentId) {
+       fetchObservations(portailStudentId).then(content => {
+          if (isMounted) setPortailObservation(content);
+       });
+    } else {
+       setPortailObservation('');
+    }
+    return () => { isMounted = false; };
+  }, [portailStudentId, fetchObservations]);
+
+  const scalePortailValue = (pct: number) => {
+     if (pct <= 100) return pct * 0.8;
+     return 80 + (pct - 100) * 0.2;
+  };
+
+  const portailDomainData = useMemo(() => {
+     if (!portailStudentId) return [];
+     const student = activeStudents.find(s => s.id === portailStudentId);
+     if (!student) return [];
+
+     const relevantComps = competences.filter(c => getGrade(c) === student.grade);
+     const startedComps = relevantComps.filter(c => {
+        return activeStudents.some(st => results[st.id]?.[c.id]?.isStarted);
+     });
+
+     const domainMap: Record<string, { studentSum: number, cohortSum: number, count: number }> = {};
+     
+     startedComps.forEach(c => {
+        const d = getDomain(c) || 'Sans domaine';
+        if (!domainMap[d]) domainMap[d] = { studentSum: 0, cohortSum: 0, count: 0 };
+        
+        const sRes = results[student.id]?.[c.id];
+        const sScore = (sRes && sRes.isStarted && sRes.score !== undefined) ? sRes.score : 0;
+        
+        let cohortSumScore = 0;
+        let initCount = 0;
+        activeStudents.filter(st => st.grade === student.grade).forEach(st => {
+           const res = results[st.id]?.[c.id];
+           if (res && res.isStarted && res.score !== undefined) {
+               cohortSumScore += res.score;
+               initCount++;
+           }
+        });
+        const cohortAvg = initCount > 0 ? cohortSumScore / initCount : 0;
+
+        domainMap[d].studentSum += sScore;
+        domainMap[d].cohortSum += cohortAvg;
+        domainMap[d].count += 1;
+     });
+
+     return Object.keys(domainMap).sort((a,b) => a.localeCompare(b)).map(d => {
+        const info = domainMap[d];
+        const maxScore = info.count * 5;
+        const studentPct = maxScore > 0 ? (info.studentSum / maxScore) * 100 : 0;
+        const cohortPct = maxScore > 0 ? (info.cohortSum / maxScore) * 100 : 0;
+        
+        return {
+           name: d,
+           studentPct,
+           cohortPct,
+        };
+     });
+  }, [portailStudentId, activeStudents, competences, results, getGrade, getDomain]);
+
+  const chartPortailData = useMemo(() => {
+     return portailDomainData.map((d) => ({
+        name: d.name,
+        studentPct: d.studentPct,
+        cohortPct: d.cohortPct,
+        studentScaled: scalePortailValue(d.studentPct),
+        cohortScaled: scalePortailValue(d.cohortPct),
+        zoneRed: 48,
+        zoneOrange: 32,
+        zoneGreen: 20
+     }));
+  }, [portailDomainData]);
+
+  const portailCurrentIndex = portailStudents.findIndex(s => s.id === portailStudentId);
+  const goPrevPortail = () => { if (portailCurrentIndex > 0) setPortailStudentId(portailStudents[portailCurrentIndex - 1].id); };
+  const goNextPortail = () => { if (portailCurrentIndex >= 0 && portailCurrentIndex < portailStudents.length - 1) setPortailStudentId(portailStudents[portailCurrentIndex + 1].id); };
+
+  const handleCopyBilan = () => {
+     const student = activeStudents.find(s => s.id === portailStudentId);
+     if (!student) return;
+     const lines = [`${student.firstName} ${student.lastName}`];
+     portailDomainData.forEach(d => {
+        lines.push(`- ${d.name} : ${d.studentPct.toFixed(1)}%`);
+     });
+     lines.push('');
+     lines.push('Observations :');
+     lines.push(portailObservation || 'Aucune observation.');
+     
+     navigator.clipboard.writeText(lines.join('\n'));
+     setCopierFeedback('Copié !');
+     setTimeout(() => setCopierFeedback(''), 2000);
+  };
+
+  const handleLienParent = () => {
+     const url = `${window.location.origin}/parent?auth=${portailStudentId}`;
+     navigator.clipboard.writeText(url);
+     setLienFeedback('Lien copié !');
+     setTimeout(() => setLienFeedback(''), 2000);
+  };
 
   const handleToggleEditMode = () => {
     if (isEditMode) {
@@ -1147,6 +1316,142 @@ export default function App() {
                          </div>
                       </div>
                    </div>
+
+              {/* Portail Individuel */}
+              <div className="bg-slate-100 rounded-xl shadow-sm border border-slate-300 overflow-hidden min-w-0 max-w-full my-6">
+                <div className="p-4 border-b border-slate-300 bg-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+                   <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                      <BookOpen className="w-5 h-5 text-indigo-600" />
+                      Portail Individuel
+                   </h2>
+                   <div className="flex flex-wrap items-center gap-3">
+                      <select value={portailGrade} onChange={e => setPortailGrade(e.target.value)} className="px-2 py-1.5 border border-slate-300 rounded text-sm bg-white focus:ring-2 focus:ring-indigo-500">
+                         <option value="all">Tous les niveaux</option>
+                         {uniqueGrades.map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                      
+                      <div className="flex items-center gap-1">
+                         <button onClick={goPrevPortail} disabled={portailCurrentIndex <= 0} className="w-8 h-8 flex items-center justify-center rounded border border-slate-300 bg-white disabled:opacity-50 hover:bg-slate-50 transition">
+                            &lt;
+                         </button>
+                         <select 
+                           value={portailStudentId} 
+                           onChange={e => setPortailStudentId(e.target.value)}
+                           className="px-3 py-1.5 border border-slate-300 rounded text-sm bg-white focus:ring-2 focus:ring-indigo-500 min-w-[200px]"
+                         >
+                            {portailStudents.length === 0 && <option value="">Aucun élève</option>}
+                            {portailStudents.map(s => (
+                               <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+                            ))}
+                         </select>
+                         <button onClick={goNextPortail} disabled={portailCurrentIndex === -1 || portailCurrentIndex >= portailStudents.length - 1} className="w-8 h-8 flex items-center justify-center rounded border border-slate-300 bg-white disabled:opacity-50 hover:bg-slate-50 transition">
+                            &gt;
+                         </button>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 ml-auto">
+                         <button onClick={handleCopyBilan} disabled={!portailStudentId} className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-sm font-medium transition">
+                            {copierFeedback || 'Copier Bilan'}
+                         </button>
+                         <button onClick={handleLienParent} disabled={!portailStudentId} className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-sm font-medium transition">
+                            {lienFeedback || 'Lien Parent'}
+                         </button>
+                      </div>
+                   </div>
+                </div>
+                
+                <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 bg-white min-w-0">
+                   {/* Graphique Bilan */}
+                   <div className="min-w-0">
+                      <h3 className="font-semibold text-slate-800 mb-4">Graphique Bilan ( vs Moy. Classe )</h3>
+                      {portailStudentId && chartPortailData.length > 0 ? (
+                         <div className="h-[250px] w-full min-w-0">
+                            <ResponsiveContainer width="100%" height="100%">
+                               <ComposedChart data={chartPortailData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                  <XAxis 
+                                     dataKey="name" 
+                                     tick={{ fontSize: 11, fill: '#475569', fontWeight: 'bold' }}
+                                     interval={0}
+                                  />
+                                  <YAxis 
+                                     yAxisId="left"
+                                     domain={[0, 100]} 
+                                     ticks={[0, 32, 64, 80, 84, 92, 100]}
+                                     tickFormatter={(val) => {
+                                        if (val <= 80) return String(Math.round(val / 16));
+                                        return String(Math.round(5 + (val - 80) / 4));
+                                     }}
+                                     tick={{ fontSize: 12, fill: '#475569' }}
+                                  />
+                                  <Tooltip 
+                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                     labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
+                                     formatter={(value: any, name: string, props: any) => {
+                                        const payload = props.payload || {};
+                                        if (name === 'Élève') return [`${payload.studentPct.toFixed(1)} %`, name];
+                                        if (name === 'Moyenne Classe') return [`${payload.cohortPct.toFixed(1)} %`, name];
+                                        return [value, name];
+                                     }}
+                                  />
+                                  <Legend verticalAlign="top" height={36} />
+                                  <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={15} />
+                                  <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
+                                  <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
+                                  <ReferenceLine y={80} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Seuil (100%)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
+                                  <Line 
+                                     yAxisId="left"
+                                     type="monotone" 
+                                     dataKey="cohortScaled" 
+                                     name="Moyenne Classe"
+                                     stroke="#4f46e5" 
+                                     strokeWidth={3}
+                                     strokeDasharray="5 5"
+                                     dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
+                                  />
+                                  <Line 
+                                     yAxisId="left"
+                                     type="monotone" 
+                                     dataKey="studentScaled" 
+                                     name="Élève"
+                                     stroke="#e6194b" 
+                                     strokeWidth={3}
+                                     dot={{ r: 4, fill: '#e6194b', strokeWidth: 2, stroke: '#fff' }}
+                                  />
+                               </ComposedChart>
+                            </ResponsiveContainer>
+                         </div>
+                      ) : (
+                         <div className="h-[250px] flex items-center justify-center text-slate-400 italic bg-slate-50 rounded-lg border border-slate-200">
+                            Sélectionnez un élève ou aucune donnée.
+                         </div>
+                      )}
+                   </div>
+                   
+                   {/* Observations Saisie */}
+                   <div className="flex flex-col h-full min-w-0">
+                      <div className="flex items-center justify-between mb-4">
+                         <h3 className="font-semibold text-slate-800">Observations / Bilan</h3>
+                         {obsFeedback && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">{obsFeedback}</span>}
+                      </div>
+                      <textarea 
+                         value={portailObservation}
+                         onChange={e => setPortailObservation(e.target.value)}
+                         placeholder="Saisissez les observations pour cet élève..."
+                         className="flex-1 w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm resize-none min-h-[200px]"
+                      />
+                      <div className="mt-3 text-right">
+                         <button 
+                            onClick={() => saveObservation(portailStudentId, portailObservation)}
+                            disabled={!portailStudentId || isSavingObs}
+                            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium py-2 px-5 rounded shadow-sm transition"
+                         >
+                            {isSavingObs ? 'Enregistrement...' : 'Enregistrer'}
+                         </button>
+                      </div>
+                   </div>
+                </div>
+              </div>
 
               {/* Analyse de la cohorte (en bas) */}
               <div className="pt-2">
