@@ -447,7 +447,7 @@ export default function App() {
          avg: count > 0 ? sum / count : null,
          count
        };
-    }).filter(c => c.count > 0 && c.avg !== null);
+    }).filter(c => c.count >= 3 && c.avg !== null);
 
     const topComps = [...compsWithAvg].sort((a, b) => (b.avg as number) - (a.avg as number)).slice(0, 3);
     const bottomComps = [...compsWithAvg].sort((a, b) => (a.avg as number) - (b.avg as number)).slice(0, 3);
@@ -775,19 +775,19 @@ export default function App() {
           </div>
 
           <div className="flex-1 p-6 overflow-auto">
-            <div className="w-full space-y-6">
+            <div className="w-full space-y-6 min-w-0 max-w-full">
                    {/* Positionnement Individuel */}
-                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-                      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 max-w-full min-w-0">
+                      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between min-w-0 max-w-full">
                          <label className="flex items-center gap-3 cursor-pointer shrink-0">
                             <input type="checkbox" checked={isIndividualMode} onChange={e => setIsIndividualMode(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
                             <span className="font-semibold text-slate-700">Positionnement individuel</span>
                          </label>
                          
                          {isIndividualMode && (
-                            <div className="flex gap-3 items-center flex-1 w-full overflow-hidden">
-                               <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Élèves :</span>
-                               <div className="flex gap-2 overflow-x-auto pb-2 flex-1 scrollbar-thin">
+                            <div className="flex gap-3 items-start md:items-center flex-col md:flex-row flex-1 w-full min-w-0 max-w-full mt-2 md:mt-0">
+                               <span className="text-sm font-medium text-slate-600 whitespace-nowrap pt-2 md:pt-0 shrink-0">Élèves :</span>
+                               <div className="flex flex-wrap gap-2 flex-1 min-w-0 w-full">
                                   {activeStudents.filter(s => pilotFilterGrade === 'all' || s.grade === pilotFilterGrade).map(s => {
                                      const isSelected = selectedStudentIds.includes(s.id);
                                      return (
@@ -862,7 +862,7 @@ export default function App() {
                    })()}
 
                    {/* Graphique */}
-                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-w-0 max-w-full">
                      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
                         <h3 className="font-semibold text-slate-800">Taux de réussite par compétence</h3>
                      </div>
@@ -956,7 +956,7 @@ export default function App() {
                            const showCohortAvg = !isIndividualMode || selectedStudentIds.length === 0;
 
                            return (
-                              <div className="h-[300px] w-full">
+                              <div className="h-[300px] w-full min-w-0">
                                  <ResponsiveContainer width="100%" height="100%">
                                     <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 40 }}>
                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -1073,7 +1073,7 @@ export default function App() {
                    </div>
 
                    {/* Diagnostic Stratégique */}
-                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-w-0 max-w-full">
                       <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
                          <h3 className="font-semibold text-slate-800">Diagnostic Stratégique</h3>
                          <div className="flex items-center gap-2">
