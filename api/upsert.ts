@@ -116,3 +116,12 @@ export default async function handler(req: any, res: any) {
         `;
         return res.status(200).json({ success: true });
       }
+
+    } catch (error: any) {
+      console.error("Erreur API détaillée:", error);
+      return res.status(500).json({ error: error.message });
+    }
+  }
+
+  return res.status(405).json({ error: 'Méthode non autorisée' });
+}
