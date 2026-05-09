@@ -576,8 +576,8 @@ export default function App() {
 
      return Object.keys(domainMap).sort((a,b) => a.localeCompare(b)).map(d => {
         const info = domainMap[d];
-        const studentMaxScore = info.studentStartedCount * 5;
-        const cohortMaxScore = info.cohortStartedCount * 5;
+        const studentMaxScore = info.studentStartedCount * 10;
+        const cohortMaxScore = info.cohortStartedCount * 10;
         
         const studentPct = studentMaxScore > 0 ? (info.studentSum / studentMaxScore) * 100 : 0;
         const cohortPct = cohortMaxScore > 0 ? (info.cohortSum / cohortMaxScore) * 100 : 0;
@@ -586,6 +586,8 @@ export default function App() {
            name: d,
            studentPct,
            cohortPct,
+           studentPoints: info.studentSum,
+           cohortPoints: info.cohortSum,
         };
      });
   }, [portailStudentId, activeStudents, competences, results, getGrade, getDomain]);
@@ -595,11 +597,13 @@ export default function App() {
         name: d.name,
         studentPct: d.studentPct,
         cohortPct: d.cohortPct,
-        studentScaled: scalePortailValue(d.studentPct),
-        cohortScaled: scalePortailValue(d.cohortPct),
-        zoneRed: 48,
-        zoneOrange: 32,
-        zoneGreen: 20
+        studentPoints: d.studentPoints,
+        cohortPoints: d.cohortPoints,
+        studentScaled: d.studentPct,
+        cohortScaled: d.cohortPct,
+        zoneRed: 30,
+        zoneOrange: 20,
+        zoneGreen: 50
      }));
   }, [portailDomainData]);
 
@@ -1390,11 +1394,8 @@ export default function App() {
                                   <YAxis 
                                      yAxisId="left"
                                      domain={[0, 100]} 
-                                     ticks={[0, 32, 64, 80, 84, 92, 100]}
-                                     tickFormatter={(val) => {
-                                        if (val <= 80) return String(Math.round(val / 16));
-                                        return String(Math.round(5 + (val - 80) / 4));
-                                     }}
+                                     ticks={[0, 20, 40, 60, 80, 100]}
+                                     tickFormatter={(val) => `${val}%`}
                                      tick={{ fontSize: 12, fill: '#475569' }}
                                   />
                                   <Tooltip 
@@ -1402,8 +1403,8 @@ export default function App() {
                                      labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
                                      formatter={(value: any, name: string, props: any) => {
                                         const payload = props.payload || {};
-                                        if (name === 'Élève') return [`${payload.studentPct.toFixed(1)} %`, name];
-                                        if (name === 'Moyenne Classe') return [`${payload.cohortPct.toFixed(1)} %`, name];
+                                        if (name === 'Élève') return [`${payload.studentPoints?.toFixed(1) || 0} briques`, `Moyenne élève`];
+                                        if (name === 'Moyenne Classe') return [`${payload.cohortPoints?.toFixed(1) || 0} briques`, `Moyenne classe`];
                                         return [value, name];
                                      }}
                                   />
@@ -1411,7 +1412,7 @@ export default function App() {
                                   <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={15} />
                                   <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
                                   <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
-                                  <ReferenceLine y={80} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Seuil (100%)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
+                                  <ReferenceLine y={50} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Seuil (50%)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
                                   <Line 
                                      yAxisId="left"
                                      type="monotone" 
