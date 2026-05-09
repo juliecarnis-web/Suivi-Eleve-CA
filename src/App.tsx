@@ -4,6 +4,7 @@ import { Loader2, PlusCircle, Upload, Trash2, ShieldAlert, Power, UserX, BookOpe
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
+import ParentPage from './app/parent/page';
 
 // --- Utility Functions ---
 function cn(...inputs: ClassValue[]) {
@@ -43,6 +44,15 @@ type Result = {
 };
 
 export default function App() {
+  const [isParentRoute] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      const params = new URLSearchParams(window.location.search);
+      return path.startsWith('/parent') || params.has('auth');
+    }
+    return false;
+  });
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [loginInput, setLoginInput] = useState('');
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
@@ -647,6 +657,10 @@ export default function App() {
       }
     }
   };
+
+  if (isParentRoute) {
+    return <ParentPage />;
+  }
 
   if (!isAuthenticated) {
     const expectedPassword = import.meta.env.VITE_LOGIN_PASSWORD || 'secret';
