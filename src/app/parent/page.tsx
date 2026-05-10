@@ -208,8 +208,8 @@ export default function ParentPage() {
                            cursor={{fill: '#f1f5f9'}}
                            formatter={(value: any, name: string, props: any) => {
                               const payload = props.payload || {};
-                              if (name === 'Élève') return [`${payload.studentRawScore?.toFixed(1) || 0} / 10`, `Moyenne élève`];
-                              if (name === 'Moyenne Classe') return [`${payload.cohortRawScore?.toFixed(1) || 0} / 10`, `Moyenne classe`];
+                              if (name === 'Élève') return [`${payload.studentRawScore?.toFixed(1) || 0} / 5`, `Moyenne élève`];
+                              if (name === 'Moyenne Classe') return [`${payload.cohortRawScore?.toFixed(1) || 0} / 5`, `Moyenne classe`];
                               return [value, name];
                            }}
                         />

@@ -621,9 +621,9 @@ export default function App() {
   if (!student) return;
   const lines = [`${student.firstName} ${student.lastName}`];
   portailDomainData.forEach(d => {
-    // On calcule le pourcentage réel basé sur l'objectif de 5
-    const realPercentage = (d.studentRawScore / 5) * 100;
-    lines.push(`- ${d.name} : ${realPercentage.toFixed(1)}%`);
+    // On utilise studentRawScore divisé par 5 pour obtenir le pourcentage sur l'objectif
+    const realPct = (d.studentRawScore / 5) * 100;
+    lines.push(`- ${d.name} : ${realPct.toFixed(1)}%`);
   });
   lines.push('');
   lines.push('Observations :');
@@ -674,7 +674,11 @@ export default function App() {
           <form 
             onSubmit={(e) => {
               e.preventDefault();
-              if (loginInput === expectedPassword || import.meta.env.VITE_LOGIN_PASSWORD === undefined) {
+              if (!loginInput.trim()) {
+                alert('Mot de passe incorrect');
+                return;
+              }
+              if (loginInput === expectedPassword) {
                 setIsAuthenticated(true);
               } else {
                 alert('Mot de passe incorrect');
@@ -1198,7 +1202,7 @@ export default function App() {
                                                    const formatVal = !Number.isInteger(originalValue) ? Number(originalValue).toFixed(1) : originalValue;
                                                    return [
                                                       <div key={studentId}>
-                                                         <span>Note : {formatVal} / 10</span>
+                                                         <span>Note : {formatVal} / 5</span>
                                                          <span className="block text-[10px] font-normal text-slate-500 mt-1">Score global : {stock} réussites</span>
                                                       </div>,
                                                       name
@@ -1314,7 +1318,7 @@ export default function App() {
                                {diagnosticData.bottomComps.map(c => (
                                   <li key={c.id} className="flex items-center justify-between p-2 rounded bg-amber-50 border border-amber-100 text-sm">
                                      <span className="font-medium text-slate-700 truncate mr-2" title={c.title}>{getCode(c)} - {c.title}</span>
-                                     <span className="font-bold text-amber-600 whitespace-nowrap">{c.avg?.toFixed(1)} / 10</span>
+                                     <span className="font-bold text-amber-600 whitespace-nowrap">{c.avg?.toFixed(1)} / 5</span>
                                   </li>
                                ))}
                                {diagnosticData.bottomComps.length === 0 && <li className="text-xs text-slate-400 italic">Aucune donnée.</li>}
@@ -1329,7 +1333,7 @@ export default function App() {
                                {diagnosticData.topComps.map(c => (
                                   <li key={c.id} className="flex items-center justify-between p-2 rounded bg-indigo-50 border border-indigo-100 text-sm">
                                      <span className="font-medium text-slate-700 truncate mr-2" title={c.title}>{getCode(c)} - {c.title}</span>
-                                     <span className="font-bold text-indigo-600 whitespace-nowrap">{c.avg?.toFixed(1)} / 10</span>
+                                     <span className="font-bold text-indigo-600 whitespace-nowrap">{c.avg?.toFixed(1)} / 5</span>
                                   </li>
                                ))}
                                {diagnosticData.topComps.length === 0 && <li className="text-xs text-slate-400 italic">Aucune donnée.</li>}
@@ -1417,8 +1421,8 @@ export default function App() {
                                      labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
                                      formatter={(value: any, name: string, props: any) => {
                                         const payload = props.payload || {};
-                                        if (name === 'Élève') return [`${payload.studentRawScore?.toFixed(1) || 0} / 10`, `Moyenne élève`];
-                                        if (name === 'Moyenne Classe') return [`${payload.cohortRawScore?.toFixed(1) || 0} / 10`, `Moyenne classe`];
+                                        if (name === 'Élève') return [`${payload.studentRawScore?.toFixed(1) || 0} / 5`, `Moyenne élève`];
+                                        if (name === 'Moyenne Classe') return [`${payload.cohortRawScore?.toFixed(1) || 0} / 5`, `Moyenne classe`];
                                         return [value, name];
                                      }}
                                   />
