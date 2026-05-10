@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { BookOpen, User } from 'lucide-react';
+import { BookOpen, User, CheckCircle } from 'lucide-react';
 
 interface Student { id: string; firstName: string; lastName: string; grade: string; isArchived?: boolean; }
 interface Competence { id: number; code: string; domain: string; subDomain?: string; title: string; grade: string; }
@@ -124,6 +124,31 @@ export default function ParentPage() {
      }));
   }, [portailDomainData]);
 
+  const progressionData = useMemo(() => {
+     if (!student || activeStudents.length === 0) return { target: 0, score: 0, pct: 0 };
+     
+     const relevantComps = competences.filter(c => getGrade(c) === student.grade);
+     const startedComps = relevantComps.filter(c => {
+        return activeStudents.some(st => results[st.id]?.[c.id]?.isStarted);
+     });
+
+     if (startedComps.length === 0) return { target: 0, score: 0, pct: 0 };
+
+     const target = startedComps.length * 5;
+     let score = 0;
+
+     startedComps.forEach(c => {
+        const res = results[student.id]?.[c.id];
+        if (res && res.isStarted && res.score !== undefined) {
+           score += Math.min(res.score, 5); // Plafonné à 5
+        }
+     });
+
+     const pct = target > 0 ? (score / target) * 100 : 0;
+
+     return { target, score, pct };
+  }, [student, activeStudents, competences, results, getGrade]);
+
   const calculateStudentStock = useCallback((id: string) => {
     let sum = 0;
     Object.values(results[id] || {}).forEach(r => {
@@ -179,6 +204,27 @@ export default function ParentPage() {
                <p className="text-sm text-slate-500 mt-1">Comparaison des performances avec la moyenne de la classe sur les domaines travaillés.</p>
             </div>
             
+            {/* Progression globale */}
+            {progressionData.target > 0 && (
+               <div className="mb-8 bg-slate-50 p-5 rounded-xl border border-slate-100">
+                  <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-3">
+                     <CheckCircle className="w-5 h-5 text-emerald-500" />
+                     Progression vers l'objectif de maîtrise
+                  </h3>
+                  <div className="w-full bg-slate-200 rounded-full h-6 overflow-hidden shadow-inner flex">
+                     <div 
+                        className="bg-emerald-500 h-full transition-all duration-500 ease-out flex items-center justify-end pr-2"
+                        style={{ width: `${Math.min(progressionData.pct, 100)}%` }}
+                     >
+                        {progressionData.pct >= 5 && <span className="text-xs font-bold text-white drop-shadow-sm">{Math.round(progressionData.pct)}%</span>}
+                     </div>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2 font-medium text-right">
+                     {progressionData.score} / {progressionData.target} briques validées ({progressionData.pct.toFixed(1)}%)
+                  </p>
+               </div>
+            )}
+
             {chartPortailData.length > 0 ? (
                <div className="h-[300px] w-full min-w-0 mt-4 rounded-xl overflow-hidden border border-slate-100 p-2 sm:p-4 bg-slate-50">
                   <ResponsiveContainer width="100%" height="100%">
