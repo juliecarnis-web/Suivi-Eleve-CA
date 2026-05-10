@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { BookOpen, User, CheckCircle } from 'lucide-react';
+import { BookOpen, User, CheckCircle, ChevronDown } from 'lucide-react';
 
 interface Student { id: string; firstName: string; lastName: string; grade: string; isArchived?: boolean; }
 interface Competence { id: number; code: string; domain: string; subDomain?: string; title: string; grade: string; }
@@ -149,6 +149,73 @@ export default function ParentPage() {
      return { target, score, pct };
   }, [student, activeStudents, competences, results, getGrade]);
 
+  const detailedDomainData = useMemo(() => {
+     if (!student || activeStudents.length === 0) return [];
+     
+     const relevantComps = competences.filter(c => getGrade(c) === student.grade);
+     const startedComps = relevantComps.filter(c => {
+        return activeStudents.some(st => results[st.id]?.[c.id]?.isStarted);
+     });
+
+     const map: Record<string, { target: number, score: number, subDomains: Record<string, { target: number, score: number }> }> = {};
+
+     startedComps.forEach(c => {
+        const dom = getDomain(c) || 'Sans domaine';
+        const sub = c.subDomain?.trim() || 'Sans sous-domaine';
+
+        if (!map[dom]) map[dom] = { target: 0, score: 0, subDomains: {} };
+        if (!map[dom].subDomains[sub]) map[dom].subDomains[sub] = { target: 0, score: 0 };
+
+        map[dom].target += 5;
+        map[dom].subDomains[sub].target += 5;
+
+        const res = results[student.id]?.[c.id];
+        if (res && res.isStarted && res.score !== undefined) {
+           const cappedScore = Math.min(res.score, 5);
+           map[dom].score += cappedScore;
+           map[dom].subDomains[sub].score += cappedScore;
+        }
+     });
+
+     const domainsList = Object.keys(map).map(dom => {
+        const subList = Object.keys(map[dom].subDomains).map(sub => {
+           const sData = map[dom].subDomains[sub];
+           return {
+              name: sub,
+              target: sData.target,
+              score: sData.score,
+              pct: sData.target > 0 ? (sData.score / sData.target) * 100 : 0
+           };
+        });
+
+        subList.sort((a, b) => a.name.localeCompare(b.name));
+
+        return {
+           name: dom,
+           target: map[dom].target,
+           score: map[dom].score,
+           pct: map[dom].target > 0 ? (map[dom].score / map[dom].target) * 100 : 0,
+           subDomains: subList,
+           subDomainCount: subList.length
+        };
+     });
+
+     domainsList.sort((a, b) => {
+       if (b.subDomainCount !== a.subDomainCount) {
+         return b.subDomainCount - a.subDomainCount;
+       }
+       return a.name.localeCompare(b.name);
+     });
+
+     return domainsList;
+  }, [student, activeStudents, competences, results, getGrade, getDomain]);
+
+  const [openDomains, setOpenDomains] = useState<Record<string, boolean>>({});
+
+  const toggleDomain = (dom: string) => {
+     setOpenDomains(prev => ({ ...prev, [dom]: !prev[dom] }));
+  };
+
   const calculateStudentStock = useCallback((id: string) => {
     let sum = 0;
     Object.values(results[id] || {}).forEach(r => {
@@ -293,6 +360,62 @@ export default function ParentPage() {
                </div>
             )}
          </div>
+
+         {/* Détail par Domaines */}
+         {detailedDomainData.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
+               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-6">
+                 Détail par Domaines
+               </h2>
+               <div className="space-y-4">
+                  {detailedDomainData.map(dom => (
+                     <div key={dom.name} className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                        <button 
+                           onClick={() => toggleDomain(dom.name)}
+                           className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-slate-50 transition text-left focus:outline-none"
+                        >
+                           <div className="flex items-center gap-2 mb-2 sm:mb-0">
+                              <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${openDomains[dom.name] ? 'rotate-180' : ''}`} />
+                              <span className="font-bold text-slate-800">{dom.name}</span>
+                           </div>
+                           <div className="flex flex-col sm:items-end w-full sm:w-1/2">
+                              <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden flex shadow-inner">
+                                 <div 
+                                    className="bg-emerald-900 h-full transition-all duration-500 ease-out"
+                                    style={{ width: `${Math.min(dom.pct, 100)}%` }}
+                                 />
+                              </div>
+                              <span className="text-xs text-slate-500 mt-1 font-medium">
+                                 {dom.score} / {dom.target} briques ({dom.pct.toFixed(1)}%)
+                              </span>
+                           </div>
+                        </button>
+                        
+                        {openDomains[dom.name] && dom.subDomains.length > 0 && (
+                           <div className="bg-slate-50 p-4 border-t border-slate-200 space-y-3">
+                              {dom.subDomains.map(sub => (
+                                 <div key={sub.name} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <span className="text-sm font-medium text-slate-700 pl-7">{sub.name}</span>
+                                    <div className="flex flex-col sm:items-end w-full sm:w-1/2 pl-7 sm:pl-0">
+                                       <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden flex shadow-inner">
+                                          <div 
+                                             className="bg-emerald-200 h-full transition-all duration-500 ease-out"
+                                             style={{ width: `${Math.min(sub.pct, 100)}%` }}
+                                          />
+                                       </div>
+                                       <span className="text-[10px] text-slate-500 mt-1 font-medium">
+                                          {sub.score} / {sub.target} briques ({sub.pct.toFixed(1)}%)
+                                       </span>
+                                    </div>
+                                 </div>
+                              ))}
+                           </div>
+                        )}
+                     </div>
+                  ))}
+               </div>
+            </div>
+         )}
 
          {/* Observations */}
          {observation && (
