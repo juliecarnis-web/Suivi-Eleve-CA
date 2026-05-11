@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { BookOpen, User, CheckCircle, ChevronDown } from 'lucide-react';
+import { BookOpen, User, CheckCircle, ChevronDown, Printer } from 'lucide-react';
 
 interface Student { id: string; firstName: string; lastName: string; grade: string; isArchived?: boolean; }
 interface Competence { id: number; code: string; domain: string; subDomain?: string; title: string; grade: string; }
@@ -243,16 +243,21 @@ export default function ParentPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8 font-sans">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div translate="no" className="min-h-screen bg-slate-50 p-2 md:p-6 lg:p-8 font-sans notranslate">
+      <div className="max-w-full md:max-w-[98%] mx-auto space-y-6 w-full">
          {/* En-tête Élève */}
          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 relative overflow-hidden">
             <div className="absolute top-0 left-0 w-2 h-full bg-indigo-500" />
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                <div>
-                 <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-tight">
-                   {student.firstName} {student.lastName}
-                 </h1>
+                 <div className="flex items-center gap-3">
+                   <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-tight">
+                     {student.firstName} {student.lastName}
+                   </h1>
+                   <button onClick={() => window.print()} className="no-print p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors flex items-center gap-2 text-sm font-semibold">
+                      <Printer className="w-4 h-4" /> <span className="hidden sm:inline">Imprimer le bilan</span>
+                   </button>
+                 </div>
                  <p className="text-slate-500 font-medium mt-1">Niveau : {student.grade}</p>
                </div>
                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-center min-w-[140px]">
@@ -429,6 +434,15 @@ export default function ParentPage() {
             </div>
          )}
       </div>
+
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .print-break-inside-avoid { break-inside: avoid; }
+          body { background: white !important; }
+          .shadow-sm, .shadow-md { box-shadow: none !important; border: 1px solid #e2e8f0 !important; }
+        }
+      `}</style>
     </div>
   );
 }
