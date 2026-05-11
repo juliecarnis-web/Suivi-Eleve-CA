@@ -1608,17 +1608,17 @@ export default function App() {
                    <Trash2 className="w-5 h-5" /> Zone Danger (Remise à Zéro)
                  </h2>
                </div>
-               <div className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-                 <button onClick={() => handleClearTable('Student')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 px-4 py-2 rounded-lg transition-colors">
+               <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                 <button onClick={() => handleClearTable('Student')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14">
                     Vider Élèves
                  </button>
-                 <button onClick={() => handleClearTable('Competence')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 px-4 py-2 rounded-lg transition-colors">
+                 <button onClick={() => handleClearTable('Competence')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14">
                     Vider Progression
                  </button>
-                 <button onClick={() => handleClearTable('Result')} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg transition-colors">
-                    Purger Notes
+                 <button onClick={() => handleClearTable('Result')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14">
+                    Vider Notes
                  </button>
-                 <button onClick={() => handleClearTable('Observations')} className="bg-orange-100 hover:bg-orange-200 text-orange-700 px-4 py-2 rounded-lg transition-colors">
+                 <button onClick={() => handleClearTable('Observations')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14">
                     Vider Observations
                  </button>
                </div>
