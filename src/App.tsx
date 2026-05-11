@@ -243,8 +243,20 @@ export default function App() {
   }, []);
 
   // --- Admin Methods ---
-  const handleClearTable = async (tableName: 'Student' | 'Competence' | 'Result') => {
-    if (!window.confirm(`⚠️ Voulez-vous vraiment vider la table ${tableName} ?`)) return;
+  const handleClearTable = async (tableName: string) => {
+    const messages: Record<string, string> = {
+      'Student': 'Vider la table des élèves supprimera tous les élèves. Continuer ?',
+      'Competence': 'Vider la progression supprimera toutes les compétences. Continuer ?',
+      'Result': '⚠️ Vider la table des notes supprimera tous les résultats. Continuer ?',
+      'Observations': 'Vider la table des observations supprimera toutes les observations. Continuer ?'
+    };
+    
+    if (!window.confirm(messages[tableName] || `⚠️ Voulez-vous vraiment vider la table ${tableName} ?`)) return;
+    
+    if (tableName === 'Result') {
+       if (!window.confirm("Êtes-vous absolument sûr ? Cette action est JURIDIQUEMENT irréversible (plus de notes).")) return;
+    }
+
     try {
       const res = await fetch('/api/upsert', {
         method: 'POST',
@@ -617,22 +629,22 @@ export default function App() {
   const goNextPortail = () => { if (portailCurrentIndex >= 0 && portailCurrentIndex < portailStudents.length - 1) setPortailStudentId(portailStudents[portailCurrentIndex + 1].id); };
 
   const handleCopyBilan = () => {
-  const student = activeStudents.find(s => s.id === portailStudentId);
-  if (!student) return;
-  const lines = [`${student.firstName} ${student.lastName}`];
-  portailDomainData.forEach(d => {
-    // On utilise studentRawScore divisé par 5 pour obtenir le pourcentage sur l'objectif
-    const realPct = (d.studentRawScore / 5) * 100;
-    lines.push(`- ${d.name} : ${realPct.toFixed(1)}%`);
-  });
-  lines.push('');
-  lines.push('Observations :');
-  lines.push(portailObservation || 'Aucune observation.');
-  
-  navigator.clipboard.writeText(lines.join('\n'));
-  setCopierFeedback('Copié !');
-  setTimeout(() => setCopierFeedback(''), 2000);
-};
+    const student = activeStudents.find(s => s.id === portailStudentId);
+    if (!student) return;
+    const lines = [`${student.firstName} ${student.lastName}`];
+    portailDomainData.forEach(d => {
+      // On utilise studentRawScore divisé par 5 pour obtenir le pourcentage sur l'objectif
+      const realPct = (d.studentRawScore / 5) * 100;
+      lines.push(`- ${d.name} : ${realPct.toFixed(1)}%`);
+    });
+    lines.push('');
+    lines.push('Observations :');
+    lines.push(portailObservation || 'Aucune observation.');
+    
+    navigator.clipboard.writeText(lines.join('\n'));
+    setCopierFeedback('Copié !');
+    setTimeout(() => setCopierFeedback(''), 2000);
+  };
 
   const handleLienParent = () => {
      const url = `${window.location.origin}/parent?auth=${portailStudentId}`;
@@ -1596,7 +1608,7 @@ export default function App() {
                    <Trash2 className="w-5 h-5" /> Zone Danger (Remise à Zéro)
                  </h2>
                </div>
-               <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+               <div className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
                  <button onClick={() => handleClearTable('Student')} className="bg-rose-100 hover:bg-rose-200 text-rose-700 px-4 py-2 rounded-lg transition-colors">
                     Vider Élèves
                  </button>
@@ -1605,6 +1617,9 @@ export default function App() {
                  </button>
                  <button onClick={() => handleClearTable('Result')} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg transition-colors">
                     Purger Notes
+                 </button>
+                 <button onClick={() => handleClearTable('Observations')} className="bg-orange-100 hover:bg-orange-200 text-orange-700 px-4 py-2 rounded-lg transition-colors">
+                    Vider Observations
                  </button>
                </div>
             </div>

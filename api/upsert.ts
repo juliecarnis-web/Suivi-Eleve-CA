@@ -35,6 +35,7 @@ export default async function handler(req: any, res: any) {
         if (body.table === 'Result') await sql`TRUNCATE TABLE "Result" RESTART IDENTITY CASCADE`;
         if (body.table === 'Student') await sql`TRUNCATE TABLE "Student" CASCADE`;
         if (body.table === 'Competence') await sql`TRUNCATE TABLE "Competence" CASCADE`;
+        if (body.table === 'Observations') await sql`TRUNCATE TABLE observations RESTART IDENTITY CASCADE`;
         return res.status(200).json({ success: true });
       }
 
