@@ -372,6 +372,24 @@ export default function App() {
   const getGrade = useCallback((c: Competence) => c.grade || c.domain || '', []);
   const getDomain = useCallback((c: Competence) => c.domain || '', []);
 
+  const domainFrequencies = useMemo(() => {
+    const freqs: Record<string, number> = {};
+    competences.forEach(c => {
+      const d = getDomain(c);
+      if (d) freqs[d] = (freqs[d] || 0) + 1;
+    });
+    return freqs;
+  }, [competences, getDomain]);
+
+  const sortDomains = useCallback((a: string, b: string) => {
+    const freqA = domainFrequencies[a] || 0;
+    const freqB = domainFrequencies[b] || 0;
+    if (freqA !== freqB) {
+      return freqB - freqA; // descending
+    }
+    return a.localeCompare(b, undefined, { numeric: true });
+  }, [domainFrequencies]);
+
   // Saisie View 
   const filteredStudents = useMemo(() => {
     let filtered = students;
@@ -387,19 +405,28 @@ export default function App() {
 
     const grades = Array.from(new Set(competences.map(c => getGrade(c)).filter(Boolean)));
     const allCodes = Array.from(new Set(filtered.map(c => getCode(c)).filter(Boolean) as string[]))
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      .sort((a, b) => {
+        const compA = filtered.find(c => getCode(c) === a);
+        const compB = filtered.find(c => getCode(c) === b);
+        const domA = compA ? getDomain(compA) : '';
+        const domB = compB ? getDomain(compB) : '';
+        if (domA !== domB) {
+           return sortDomains(domA, domB);
+        }
+        return a.localeCompare(b, undefined, { numeric: true });
+      });
 
     return { uniqueCompGrades: grades, codes: allCodes };
-  }, [competences, filterGrade, filterDomain, filterSubDomain, getCode, getGrade, getDomain]);
+  }, [competences, filterGrade, filterDomain, filterSubDomain, getCode, getGrade, getDomain, sortDomains]);
 
   const uniqueGrades = Array.from(new Set(students.map(s => s.grade)));
-  const uniqueDomains = Array.from(new Set(competences.map(c => getDomain(c)).filter(Boolean)));
+  const uniqueDomains = Array.from(new Set(competences.map(c => getDomain(c)).filter(Boolean))).sort(sortDomains);
   const uniqueSubCategories = Array.from(new Set(
     competences
       .filter(c => filterDomain === 'all' || getDomain(c) === filterDomain)
       .map(c => c.subDomain)
       .filter(Boolean)
-  ));
+  )).sort((a, b) => (a as string).localeCompare(b as string, undefined, { numeric: true }));
   const scoreOptions = Array.from({length: 11}, (_, i) => i);
 
   // All possible grades for Admin form
@@ -458,13 +485,13 @@ export default function App() {
     return { pilotageData: grouped, activeComps: activeCompsCount, flatFilteredComps: filtered };
   }, [competences, activeStudents, results, pilotFilterGrade, pilotFilterDomain, pilotFilterSubDomain, getGrade, getDomain]);
 
-  const pilotUniqueDomains = Array.from(new Set(competences.map(c => getDomain(c)).filter(Boolean)));
+  const pilotUniqueDomains = Array.from(new Set(competences.map(c => getDomain(c)).filter(Boolean))).sort(sortDomains);
   const pilotUniqueSubCategories = Array.from(new Set(
     competences
       .filter(c => pilotFilterDomain === 'all' || getDomain(c) === pilotFilterDomain)
       .map(c => c.subDomain)
       .filter(Boolean)
-  ));
+  )).sort((a, b) => (a as string).localeCompare(b as string, undefined, { numeric: true }));
 
   const calculateStudentStock = useCallback((studentId: string) => {
     let stock = 0;
@@ -596,7 +623,7 @@ export default function App() {
         }
      });
 
-     return Object.keys(domainMap).sort((a,b) => a.localeCompare(b)).map(d => {
+     return Object.keys(domainMap).sort(sortDomains).map(d => {
         const info = domainMap[d];
         const studentRawScore = info.studentStartedCount > 0 ? (info.studentSum / info.studentStartedCount) : 0;
         const cohortRawScore = info.cohortStartedCount > 0 ? (info.cohortSum / info.cohortStartedCount) : 0;
@@ -1083,13 +1110,13 @@ export default function App() {
                            let gapCount = 1;
                            let blockIndex = 0;
                            // On s'assure que si un domaine est sélectionné, on n'itère QUE sur lui. 
-                           let domainsToIterate = Object.keys(pilotageData).sort((a,b) => a.localeCompare(b));
+                           let domainsToIterate = Object.keys(pilotageData).sort(sortDomains);
                            if (pilotFilterDomain !== 'all') {
                               domainsToIterate = domainsToIterate.filter(d => d === pilotFilterDomain);
                            }
                            
                            domainsToIterate.forEach((domain, domIndex) => {
-                              let subDomains = Object.keys(pilotageData[domain] || {}).sort((a,b) => a.localeCompare(b));
+                              let subDomains = Object.keys(pilotageData[domain] || {}).sort((a,b) => a.localeCompare(b, undefined, { numeric: true }));
                               if (pilotFilterSubDomain !== 'all') {
                                  subDomains = subDomains.filter(sd => sd === pilotFilterSubDomain);
                               }
