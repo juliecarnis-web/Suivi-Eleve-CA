@@ -1,0 +1,8 @@
+{
+  "name": "Cahier Journal et Planificateur Enseignant",
+  "description": "Application de cahier journal, suivi des élèves, saisie des compétences et pilotage pour enseignants connectée à une base de données Neon PostgreSQL.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
