@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Power, UserX, Lock, Unlock } from 'lucide-react';
+import { Power, UserX, Lock, Unlock, Users } from 'lucide-react';
 import { Student, Competence, Result } from '../types';
 import { cn, getCode, getGrade, getDomain, getScoreColor, createDomainSorter } from '../utils/helpers';
+import SaisieGroupsModal from './SaisieGroupsModal';
 
 interface SaisieTabProps {
   students: Student[];
@@ -27,6 +28,7 @@ export default function SaisieTab({
   const [filterGrade, setFilterGrade] = useState<string>('all');
   const [filterDomain, setFilterDomain] = useState<string>('all');
   const [filterSubDomain, setFilterSubDomain] = useState<string>('all');
+  const [isGroupsModalOpen, setIsGroupsModalOpen] = useState<boolean>(false);
 
   const filteredStudents = useMemo(() => {
     let filtered = students;
@@ -96,7 +98,15 @@ export default function SaisieTab({
           </div>
         </div>
         
-        <div className="flex items-center ml-4 shrink-0">
+        <div className="flex items-center gap-2 ml-4 shrink-0">
+          <button
+            onClick={() => setIsGroupsModalOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
+          >
+            <Users className="w-4 h-4 text-indigo-600" />
+            Binômes / Équipes
+          </button>
+
           <button
             onClick={handleToggleEditMode}
             className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors border", isEditMode ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50")}
@@ -259,6 +269,17 @@ export default function SaisieTab({
             {codes.length} codes affichés | {filteredStudents.length} élèves
         </p>
       </div>
+
+      <SaisieGroupsModal
+        isOpen={isGroupsModalOpen}
+        onClose={() => setIsGroupsModalOpen(false)}
+        students={students}
+        competences={competences}
+        results={results}
+        initialGrade={filterGrade}
+        initialDomain={filterDomain}
+        initialSubDomain={filterSubDomain}
+      />
     </div>
   );
 }
