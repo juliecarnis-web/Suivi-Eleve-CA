@@ -18,7 +18,7 @@ export type Competence = {
 export type Result = {
   studentId: string;
   competenceId: number;
-  score: number;
+  score: number | null;
   isStarted: boolean;
 };
 
@@ -61,3 +61,21 @@ export type CurriculumResult = {
   updatedAt?: string;
   teacher_id?: string;
 };
+
+export type ApcFocusType = 'competence' | 'theme' | 'fluence' | 'curriculum' | 'custom';
+
+export type ApcEntry = {
+  id: string;
+  session_id: string;
+  session_date: string; // YYYY-MM-DD
+  student_id: string;
+  competence_id: number | null;
+  chapter_code: string;
+  chapter_title: string;
+  domain: string;
+  sub_domain: string;
+  focus_type: ApcFocusType;
+  notes?: string;
+  created_at?: string;
+};
+

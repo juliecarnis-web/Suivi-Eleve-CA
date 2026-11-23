@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, ReferenceLine, Line } from 'recharts';
-import { Activity, Layers, BarChart2 } from 'lucide-react';
+import { Activity, Layers, BarChart2, User } from 'lucide-react';
 import { cn, getCode, getGrade, getDomain, createDomainSorter, scaleScore } from '../utils/helpers';
+import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
 import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult } from '../types';
 import PortailIndividuel from './PortailIndividuel';
 import FluenceCharts from './fluence/FluenceCharts';
@@ -42,6 +43,12 @@ export default function PilotageTab({
   const [isIndividualMode, setIsIndividualMode] = useState<boolean>(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [diagFilterGrade, setDiagFilterGrade] = useState<string>('all');
+  const portailSectionRef = useRef<HTMLDivElement>(null);
+
+  const evaluatedCompMap = useMemo(
+    () => getEvaluatedCompetenceMap(activeStudents, competences, results),
+    [activeStudents, competences, results]
+  );
 
   const sortDomains = useMemo(() => createDomainSorter(competences), [competences]);
 
@@ -58,7 +65,7 @@ export default function PilotageTab({
     const compMap = results[studentId];
     if (compMap) {
       Object.values(compMap).forEach(res => {
-         if (res && res.isStarted && res.score !== undefined) {
+         if (res && res.isStarted && res.score !== null && res.score !== undefined) {
             stock += res.score;
          }
       });
@@ -73,19 +80,23 @@ export default function PilotageTab({
       
       const relevantStudents = activeStudents.filter(s => s.grade === getGrade(comp));
       
+      let hasAnyStarted = false;
       relevantStudents.forEach(s => {
         const res = results[s.id]?.[comp.id];
         if (res && res.isStarted) {
-          totalStarted++;
-          sumScore += res.score || 0;
-          
-          if (res.score >= 5) green++;
-          else if (res.score >= 3 && res.score < 5) yellow++;
-          else red++;
+          hasAnyStarted = true;
+          if (res.score !== null && res.score !== undefined) {
+            totalStarted++;
+            sumScore += res.score;
+            
+            if (res.score >= 5) green++;
+            else if (res.score >= 3 && res.score < 5) yellow++;
+            else red++;
+          }
         }
       });
       
-      if (totalStarted > 0) activeCompsCount++;
+      if (hasAnyStarted) activeCompsCount++;
       
       return { 
         ...comp, 
@@ -97,7 +108,7 @@ export default function PilotageTab({
       };
     });
 
-    let filtered = enhancedComps.filter(c => c.totalStarted > 0);
+    let filtered = enhancedComps.filter(c => c.totalStarted > 0 && evaluatedCompMap.has(c.id));
     if (pilotFilterGrade !== 'all') filtered = filtered.filter(c => getGrade(c) === pilotFilterGrade);
     if (pilotFilterDomain !== 'all') filtered = filtered.filter(c => getDomain(c) === pilotFilterDomain || c.subDomain === pilotFilterDomain);
     if (pilotFilterSubDomain !== 'all') filtered = filtered.filter(c => c.subDomain === pilotFilterSubDomain);
@@ -112,7 +123,7 @@ export default function PilotageTab({
     });
 
     return { pilotageData: grouped, activeComps: activeCompsCount };
-  }, [competences, activeStudents, results, pilotFilterGrade, pilotFilterDomain, pilotFilterSubDomain]);
+  }, [competences, activeStudents, results, pilotFilterGrade, pilotFilterDomain, pilotFilterSubDomain, evaluatedCompMap]);
 
   const diagnosticData = useMemo(() => {
     const relevantStudents = activeStudents.filter(s => diagFilterGrade === 'all' || s.grade === diagFilterGrade);
@@ -141,7 +152,7 @@ export default function PilotageTab({
        let count = 0;
        studentsForComp.forEach(s => {
           const res = results[s.id]?.[c.id];
-          if (res && res.isStarted && res.score !== undefined) {
+          if (res && res.isStarted && res.score !== null && res.score !== undefined) {
              sum += res.score;
              count++;
           }
@@ -184,6 +195,15 @@ export default function PilotageTab({
              {pilotUniqueSubCategories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+
+        <button
+          type="button"
+          onClick={() => portailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition whitespace-nowrap shrink-0"
+        >
+          <User className="w-3.5 h-3.5 text-indigo-600" />
+          Portail Élève &amp; Bilans
+        </button>
       </div>
 
       <div className="flex-1 p-6 overflow-auto">
@@ -226,7 +246,7 @@ export default function PilotageTab({
             </div>
 
             {(() => {
-                let tGreen = 0, tOrange = 0, tRed = 0, tGrey = 0;
+                let tLightGreen = 0, tMedGreen = 0, tDarkGreen = 0, tGrey = 0;
                 
                 const filteredStudentsForLifeBar = activeStudents.filter(s => pilotFilterGrade === 'all' || s.grade === pilotFilterGrade);
                 const relevantComps = competences.filter(c => pilotFilterGrade === 'all' || getGrade(c) === pilotFilterGrade);
@@ -234,38 +254,38 @@ export default function PilotageTab({
                 filteredStudentsForLifeBar.forEach(s => {
                   relevantComps.forEach(c => {
                       const res = results[s.id]?.[c.id];
-                      if (res && res.isStarted && res.score !== undefined) {
-                        if (res.score >= 5) tGreen++;
-                        else if (res.score >= 3 && res.score < 5) tOrange++;
-                        else tRed++;
+                      if (res && res.isStarted && res.score !== null && res.score !== undefined && evaluatedCompMap.has(c.id)) {
+                        if (res.score >= 5) tDarkGreen++;
+                        else if (res.score >= 3 && res.score < 5) tMedGreen++;
+                        else tLightGreen++;
                       } else {
                         tGrey++;
                       }
                   });
                 });
 
-                const total = tGreen + tOrange + tRed + tGrey;
+                const total = tLightGreen + tMedGreen + tDarkGreen + tGrey;
                 if (total === 0) return null;
 
-                const pGreen = (tGreen / total) * 100;
-                const pOrange = (tOrange / total) * 100;
-                const pRed = (tRed / total) * 100;
+                const pLightGreen = (tLightGreen / total) * 100;
+                const pMedGreen = (tMedGreen / total) * 100;
+                const pDarkGreen = (tDarkGreen / total) * 100;
                 const pGrey = (tGrey / total) * 100;
 
                 return (
                   <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                       <h3 className="font-semibold text-slate-800 mb-4">Progression Annuelle (Vue globale {pilotFilterGrade === 'all' ? 'Cohorte' : pilotFilterGrade})</h3>
-                      <div className="flex h-6 rounded-full overflow-hidden shadow-inner w-full">
-                        {pGreen > 0 && <div style={{ width: `${pGreen}%` }} className="bg-emerald-500 h-full transition-all group relative" title={`Validé: ${tGreen} (${pGreen.toFixed(1)}%)`}></div>}
-                        {pOrange > 0 && <div style={{ width: `${pOrange}%` }} className="bg-amber-400 h-full transition-all group relative" title={`En cours: ${tOrange} (${pOrange.toFixed(1)}%)`}></div>}
-                        {pRed > 0 && <div style={{ width: `${pRed}%` }} className="bg-rose-500 h-full transition-all group relative" title={`Non acquis: ${tRed} (${pRed.toFixed(1)}%)`}></div>}
+                      <div className="flex h-6 rounded-full overflow-hidden shadow-inner w-full bg-slate-100">
+                        {pLightGreen > 0 && <div style={{ width: `${pLightGreen}%` }} className="bg-emerald-200 h-full transition-all group relative" title={`Amorcé (< 3): ${tLightGreen} (${pLightGreen.toFixed(1)}%)`}></div>}
+                        {pMedGreen > 0 && <div style={{ width: `${pMedGreen}%` }} className="bg-emerald-500 h-full transition-all group relative" title={`En cours (3-4): ${tMedGreen} (${pMedGreen.toFixed(1)}%)`}></div>}
+                        {pDarkGreen > 0 && <div style={{ width: `${pDarkGreen}%` }} className="bg-emerald-800 h-full transition-all group relative" title={`Validé (>= 5): ${tDarkGreen} (${pDarkGreen.toFixed(1)}%)`}></div>}
                         {pGrey > 0 && <div style={{ width: `${pGrey}%` }} className="bg-slate-200 h-full transition-all group relative" title={`Non évalué: ${tGrey} (${pGrey.toFixed(1)}%)`}></div>}
                       </div>
-                      <div className="flex justify-between items-center text-xs font-medium text-slate-500 mt-3 px-1">
-                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500"></div> Validé ({pGreen.toFixed(1)}%)</div>
-                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-amber-400"></div> En cours ({pOrange.toFixed(1)}%)</div>
-                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-rose-500"></div> Non acquis ({pRed.toFixed(1)}%)</div>
-                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-slate-200"></div> Non évalué ({pGrey.toFixed(1)}%)</div>
+                      <div className="flex flex-wrap justify-between items-center gap-3 text-xs font-medium text-slate-600 mt-3 px-1">
+                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-200 border border-emerald-300"></div> Amorcé &lt; 3 ({pLightGreen.toFixed(1)}%)</div>
+                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500"></div> En cours 3–4 ({pMedGreen.toFixed(1)}%)</div>
+                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-800"></div> Validé ≥ 5 ({pDarkGreen.toFixed(1)}%)</div>
+                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div> Non évalué ({pGrey.toFixed(1)}%)</div>
                       </div>
                   </div>
                 );
@@ -327,7 +347,7 @@ export default function PilotageTab({
                                     const s = students.find(st => st.id === studentId);
                                     if (s && s.grade === getGrade(c)) {
                                       const res = results[studentId]?.[c.id];
-                                      if (res && res.isStarted && res.score !== undefined) {
+                                      if (res && res.isStarted && res.score !== null && res.score !== undefined) {
                                           dataPoint[`student_${studentId}`] = res.score;
                                           dataPoint[`student_${studentId}_scaled_blk_${currentBlockIndex}`] = scaleScore(res.score);
                                       }
@@ -352,7 +372,7 @@ export default function PilotageTab({
                         return <div className="p-6 text-center text-slate-500 italic">Aucune donnée démarrée pour cette sélection.</div>;
                     }
 
-                    const studentColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#91eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080'];
+                    const studentColors = ['#9333ea', '#2563eb', '#d97706', '#0891b2', '#c026d3', '#0f766e', '#4f46e5', '#b45309', '#be185d', '#0369a1'];
                     const showCohortAvg = !isIndividualMode || selectedStudentIds.length === 0;
 
                     return (
@@ -384,9 +404,9 @@ export default function PilotageTab({
                                     formatter={(value: any, name: string, props: any) => {
                                       const payload = props.payload || {};
                                       
-                                      if (name === 'Validé (>= 5)') return [payload.pctGreen !== undefined ? `${Number(payload.pctGreen).toFixed(1)} %` : '0.0 %', name];
-                                      if (name === 'En cours (3-4)') return [payload.pctOrange !== undefined ? `${Number(payload.pctOrange).toFixed(1)} %` : '0.0 %', name];
-                                      if (name === 'Non acquis (< 3)') return [payload.pctRed !== undefined ? `${Number(payload.pctRed).toFixed(1)} %` : '0.0 %', name];
+                                      if (name === 'Validé (≥ 5)') return [payload.pctGreen !== undefined ? `${Number(payload.pctGreen).toFixed(1)} %` : '0.0 %', name];
+                                      if (name === 'En cours (3–4)') return [payload.pctOrange !== undefined ? `${Number(payload.pctOrange).toFixed(1)} %` : '0.0 %', name];
+                                      if (name === 'Amorcé (< 3)') return [payload.pctRed !== undefined ? `${Number(payload.pctRed).toFixed(1)} %` : '0.0 %', name];
                                       if (name === 'Moyenne Cohorte') return [payload.cohortAvg !== null && payload.cohortAvg !== undefined ? Number(payload.cohortAvg).toFixed(1) : value, name];
                                       
                                       if (props.dataKey && typeof props.dataKey === 'string' && props.dataKey.includes('_scaled_blk_') && name !== 'Moyenne Cohorte') {
@@ -412,11 +432,11 @@ export default function PilotageTab({
                                 />
                                 <Legend verticalAlign="top" height={36} />
                                 
-                                <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={15} />
-                                <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
-                                <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
+                                <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#d1fae5" opacity={0.85} name="Amorcé (< 3)" barSize={15} />
+                                <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#6ee7b7" opacity={0.65} name="En cours (3–4)" />
+                                <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#10b981" opacity={0.6} name="Validé (≥ 5)" />
                                 
-                                <ReferenceLine y={8} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Objectif Atteint (100%)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
+                                <ReferenceLine y={8} yAxisId="left" stroke="#047857" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Objectif Atteint (100%)', fill: '#047857', fontSize: 12, fontWeight: 'bold' }} />
                                 
                                 {showCohortAvg && Array.from({length: totalBlocks}).map((_, blkIdx) => (
                                     <Line 
@@ -425,18 +445,19 @@ export default function PilotageTab({
                                       type="monotone" 
                                       dataKey={`cohortAvgScaled_blk_${blkIdx}`} 
                                       name="Moyenne Cohorte"
-                                      legendType={blkIdx === 0 ? "line" : "none"}
-                                      stroke="#4f46e5" 
-                                      strokeWidth={3}
-                                      dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
-                                      activeDot={{ r: 6 }}
-                                      connectNulls={true}
+                                      legendType={blkIdx === 0 ? "circle" : "none"}
+                                      stroke="#2563eb" 
+                                      strokeWidth={0}
+                                      dot={{ r: 4.5, fill: '#2563eb', strokeWidth: 1.5, stroke: '#fff' }}
+                                      activeDot={{ r: 6.5, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }}
+                                      connectNulls={false}
                                     />
                                 ))}
 
                                 {isIndividualMode && selectedStudentIds.flatMap((studentId, idx) => {
                                     const s = students.find(st => st.id === studentId);
                                     const labelName = s ? `${s.firstName} ${s.lastName}` : `Élève ${studentId}`;
+                                    const color = studentColors[idx % studentColors.length];
                                     return Array.from({length: totalBlocks}).map((_, blkIdx) => (
                                       <Line 
                                           yAxisId="left"
@@ -444,12 +465,12 @@ export default function PilotageTab({
                                           type="monotone" 
                                           dataKey={`student_${studentId}_scaled_blk_${blkIdx}`}
                                           name={labelName}
-                                          legendType={blkIdx === 0 ? "line" : "none"}
-                                          stroke={studentColors[idx % studentColors.length]}
-                                          strokeWidth={2}
-                                          dot={{ r: 3 }}
-                                          activeDot={{ r: 5 }}
-                                          connectNulls={true}
+                                          legendType={blkIdx === 0 ? "circle" : "none"}
+                                          stroke={color}
+                                          strokeWidth={0}
+                                          dot={{ r: 4.5, fill: color, strokeWidth: 1.5, stroke: '#fff' }}
+                                          activeDot={{ r: 6.5, fill: color, strokeWidth: 2, stroke: '#fff' }}
+                                          connectNulls={false}
                                       />
                                     ));
                                 })}
@@ -585,19 +606,21 @@ export default function PilotageTab({
               </div>
             </div>
 
-            <PortailIndividuel
-              activeStudents={activeStudents}
-              competences={competences}
-              results={results}
-              fetchObservations={fetchObservations}
-              saveObservation={saveObservation}
-              calculateStudentStock={calculateStudentStock}
-              uniqueGrades={uniqueGrades}
-              fluenceScores={fluenceScores}
-              fluenceReferences={fluenceReferences}
-              curriculumItems={curriculumItems}
-              curriculumResults={curriculumResults}
-            />
+            <div ref={portailSectionRef}>
+              <PortailIndividuel
+                activeStudents={activeStudents}
+                competences={competences}
+                results={results}
+                fetchObservations={fetchObservations}
+                saveObservation={saveObservation}
+                calculateStudentStock={calculateStudentStock}
+                uniqueGrades={uniqueGrades}
+                fluenceScores={fluenceScores}
+                fluenceReferences={fluenceReferences}
+                curriculumItems={curriculumItems}
+                curriculumResults={curriculumResults}
+              />
+            </div>
 
             <div className="pt-2">
                 <h2 className="text-xl font-bold text-slate-800 tracking-tight mb-4">Analyse de la cohorte</h2>

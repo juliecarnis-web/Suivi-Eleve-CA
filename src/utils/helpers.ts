@@ -6,8 +6,8 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function getScoreColor(score: number, isStarted: boolean) {
-  if (!isStarted) return 'bg-slate-100 text-slate-400 border-slate-200';
+export function getScoreColor(score: number | null | undefined, isStarted: boolean) {
+  if (!isStarted || score === null || score === undefined) return 'bg-slate-100 text-slate-400 border-slate-200';
   if (score >= 5) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
   if (score >= 3 && score <= 4) return 'bg-amber-50 text-amber-700 border-amber-200';
   return 'bg-rose-50 text-rose-700 border-rose-200';

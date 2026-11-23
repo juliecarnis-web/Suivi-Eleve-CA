@@ -2,6 +2,8 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ComposedChart, LineChart, Line, Bar, BarChart, Cell, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { BookOpen, User, CheckCircle, ChevronDown, Printer, Activity, Target, TrendingUp, Book, Layers, Award } from 'lucide-react';
 import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult } from '../types';
+import { getDomain as getCompDomain, getGrade as getCompGrade, scaleScore, createDomainSorter } from '../utils/helpers';
+import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
 
 export default function ParentPage() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -63,15 +65,19 @@ export default function ParentPage() {
   const activeStudents = useMemo(() => students.filter(s => !s.isArchived), [students]);
   const student = useMemo(() => activeStudents.find(s => s.id === studentId), [activeStudents, studentId]);
 
-  const getDomain = useCallback((c: Competence) => (c.domain || '').trim(), []);
-  const getGrade = useCallback((c: Competence) => (c.grade || '').trim(), []);
+  const getDomain = useCallback((c: Competence) => getCompDomain(c).trim(), []);
+  const getGrade = useCallback((c: Competence) => getCompGrade(c).trim(), []);
+  const sortDomains = useMemo(() => createDomainSorter(competences), [competences]);
+
+  const evaluatedCompMap = useMemo(
+    () => getEvaluatedCompetenceMap(activeStudents, competences, results),
+    [activeStudents, competences, results]
+  );
 
   const portailDomainData = useMemo(() => {
      if (!student) return [];
      const relevantComps = competences.filter(c => getGrade(c) === student.grade);
-     const startedComps = relevantComps.filter(c => {
-        return activeStudents.some(st => results[st.id]?.[c.id]?.isStarted);
-     });
+     const startedComps = relevantComps.filter(c => evaluatedCompMap.has(c.id));
 
      const domainMap: Record<string, { studentSum: number, studentStartedCount: number, cohortSum: number, cohortStartedCount: number }> = {};
      
@@ -80,7 +86,7 @@ export default function ParentPage() {
         if (!domainMap[d]) domainMap[d] = { studentSum: 0, studentStartedCount: 0, cohortSum: 0, cohortStartedCount: 0 };
         
         const sRes = results[student.id]?.[c.id];
-        if (sRes && sRes.isStarted && sRes.score !== undefined) {
+        if (sRes && sRes.isStarted && sRes.score !== null && sRes.score !== undefined) {
            domainMap[d].studentSum += sRes.score;
            domainMap[d].studentStartedCount += 1;
         }
@@ -89,7 +95,7 @@ export default function ParentPage() {
         let initCount = 0;
         activeStudents.filter(st => st.grade === student.grade).forEach(st => {
            const res = results[st.id]?.[c.id];
-           if (res && res.isStarted && res.score !== undefined) {
+           if (res && res.isStarted && res.score !== null && res.score !== undefined) {
                cohortSumScore += res.score;
                initCount++;
            }
@@ -101,7 +107,7 @@ export default function ParentPage() {
         }
      });
 
-     return Object.keys(domainMap).sort((a,b) => a.localeCompare(b)).map(d => {
+     return Object.keys(domainMap).sort(sortDomains).map(d => {
         const info = domainMap[d];
         const studentRawScore = info.studentStartedCount > 0 ? (info.studentSum / info.studentStartedCount) : 0;
         const cohortRawScore = info.cohortStartedCount > 0 ? (info.cohortSum / info.cohortStartedCount) : 0;
@@ -114,9 +120,7 @@ export default function ParentPage() {
            cohortPoints: info.cohortSum,
         };
      });
-  }, [student, activeStudents, competences, results, getGrade, getDomain]);
-
-  const scaleScore = (val: number) => val <= 5 ? (val * 1.6) : (8 + (val - 5) * 0.4);
+  }, [student, activeStudents, competences, results, getGrade, getDomain, sortDomains, evaluatedCompMap]);
 
   const chartPortailData = useMemo(() => {
      return portailDomainData.map((d) => ({
@@ -133,18 +137,20 @@ export default function ParentPage() {
      if (!student || activeStudents.length === 0) return { target: 0, score: 0, pct: 0 };
      
      const relevantComps = competences.filter(c => getGrade(c) === student.grade);
-     const startedComps = relevantComps.filter(c => {
-        return activeStudents.some(st => results[st.id]?.[c.id]?.isStarted);
+     const evaluatedComps = relevantComps.filter(c => {
+        if (!evaluatedCompMap.has(c.id)) return false;
+        const res = results[student.id]?.[c.id];
+        return Boolean(res && res.isStarted && res.score !== null && res.score !== undefined);
      });
 
-     if (startedComps.length === 0) return { target: 0, score: 0, pct: 0 };
+     if (evaluatedComps.length === 0) return { target: 0, score: 0, pct: 0 };
 
-     const target = startedComps.length * 5;
+     const target = evaluatedComps.length * 5;
      let score = 0;
 
-     startedComps.forEach(c => {
+     evaluatedComps.forEach(c => {
         const res = results[student.id]?.[c.id];
-        if (res && res.isStarted && res.score !== undefined) {
+        if (res && res.isStarted && res.score !== null && res.score !== undefined) {
            score += Math.min(res.score, 5); // Plafonné à 5
         }
      });
@@ -152,19 +158,21 @@ export default function ParentPage() {
      const pct = target > 0 ? (score / target) * 100 : 0;
 
      return { target, score, pct };
-  }, [student, activeStudents, competences, results, getGrade]);
+  }, [student, activeStudents, competences, results, getGrade, evaluatedCompMap]);
 
   const detailedDomainData = useMemo(() => {
      if (!student || activeStudents.length === 0) return [];
      
      const relevantComps = competences.filter(c => getGrade(c) === student.grade);
-     const startedComps = relevantComps.filter(c => {
-        return activeStudents.some(st => results[st.id]?.[c.id]?.isStarted);
+     const evaluatedComps = relevantComps.filter(c => {
+        if (!evaluatedCompMap.has(c.id)) return false;
+        const res = results[student.id]?.[c.id];
+        return Boolean(res && res.isStarted && res.score !== null && res.score !== undefined);
      });
 
      const map: Record<string, { target: number, score: number, subDomains: Record<string, { target: number, score: number }> }> = {};
 
-     startedComps.forEach(c => {
+     evaluatedComps.forEach(c => {
         const dom = getDomain(c) || 'Sans domaine';
         const sub = (c.subDomain || '').trim() || 'Sans sous-domaine';
 
@@ -175,7 +183,7 @@ export default function ParentPage() {
         map[dom].subDomains[sub].target += 5;
 
         const res = results[student.id]?.[c.id];
-        if (res && res.isStarted && res.score !== undefined) {
+        if (res && res.isStarted && res.score !== null && res.score !== undefined) {
            const cappedScore = Math.min(res.score, 5);
            map[dom].score += cappedScore;
            map[dom].subDomains[sub].score += cappedScore;
@@ -213,7 +221,7 @@ export default function ParentPage() {
      });
 
      return domainsList;
-  }, [student, activeStudents, competences, results, getGrade, getDomain]);
+  }, [student, activeStudents, competences, results, getGrade, getDomain, evaluatedCompMap]);
 
   const [openDomains, setOpenDomains] = useState<Record<string, boolean>>({});
 
@@ -224,7 +232,7 @@ export default function ParentPage() {
   const calculateStudentStock = useCallback((id: string) => {
     let sum = 0;
     Object.values(results[id] || {}).forEach(r => {
-      if (r.isStarted && (r.score !== undefined)) {
+      if (r.isStarted && r.score !== null && r.score !== undefined) {
         sum += r.score;
       }
     });
@@ -442,29 +450,31 @@ export default function ParentPage() {
                            }}
                         />
                         <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '12px', fontWeight: '500', paddingBottom: '10px' }} />
-                        <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#fee2e2" opacity={0.6} name="Non acquis (< 3)" barSize={12} radius={[0,0,4,4]} />
-                        <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#fef3c7" opacity={0.6} name="En cours (3-4)" />
-                        <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#d1fae5" opacity={0.6} name="Validé (>= 5)" radius={[4,4,0,0]} />
-                        <ReferenceLine y={8} yAxisId="left" stroke="#10b981" strokeWidth={2} strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Objectif Atteint (100%)', fill: '#10b981', fontSize: 11, fontWeight: 'bold' }} />
+                        <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#d1fae5" opacity={0.85} name="Amorcé (< 3)" barSize={12} radius={[0,0,4,4]} />
+                        <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#6ee7b7" opacity={0.65} name="En cours (3–4)" />
+                        <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#10b981" opacity={0.6} name="Validé (≥ 5)" radius={[4,4,0,0]} />
+                        <ReferenceLine y={8} yAxisId="left" stroke="#047857" strokeWidth={2} strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Objectif Atteint (100%)', fill: '#047857', fontSize: 11, fontWeight: 'bold' }} />
                         <Line 
                            yAxisId="left"
                            type="monotone" 
                            dataKey="cohortScaled" 
                            name="Moyenne Classe"
-                           stroke="#6366f1" 
-                           strokeWidth={2}
-                           strokeDasharray="4 4"
-                           dot={{ r: 3, fill: '#6366f1', strokeWidth: 1, stroke: '#fff' }}
+                           legendType="circle"
+                           stroke="#2563eb" 
+                           strokeWidth={0}
+                           dot={{ r: 5, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }}
+                           activeDot={{ r: 7, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }}
                         />
                         <Line 
                            yAxisId="left"
                            type="monotone" 
                            dataKey="studentScaled" 
                            name="Élève"
-                           stroke="#f43f5e" 
-                           strokeWidth={3}
-                           dot={{ r: 5, fill: '#f43f5e', strokeWidth: 2, stroke: '#fff' }}
-                           activeDot={{ r: 7 }}
+                           legendType="circle"
+                           stroke="#9333ea" 
+                           strokeWidth={0}
+                           dot={{ r: 6.5, fill: '#9333ea', strokeWidth: 2, stroke: '#fff' }}
+                           activeDot={{ r: 8, fill: '#9333ea', strokeWidth: 2, stroke: '#fff' }}
                         />
                      </ComposedChart>
                   </ResponsiveContainer>

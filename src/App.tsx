@@ -1,13 +1,14 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { BookOpen, BarChart2, Settings, Lock, Loader2, X, ShieldAlert, Activity, Layers } from 'lucide-react';
+import { BookOpen, BarChart2, Settings, Lock, Loader2, X, ShieldAlert, Activity, Layers, Sparkles } from 'lucide-react';
 import { cn } from './utils/helpers';
-import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult } from './types';
+import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ApcEntry } from './types';
 
 import SaisieTab from './components/SaisieTab';
 import PilotageTab from './components/PilotageTab';
 import AdminTab from './components/AdminTab';
 import FluenceTab from './components/fluence/FluenceTab';
 import CurriculumTab from './components/curriculum/CurriculumTab';
+import ApcTab, { ApcAssignmentDraft } from './components/ApcTab';
 import ParentPage from './pages/parent';
 
 export default function App() {
@@ -36,8 +37,9 @@ export default function App() {
   const [fluenceReferences, setFluenceReferences] = useState<FluenceReference[]>([]);
   const [curriculumItems, setCurriculumItems] = useState<CurriculumItem[]>([]);
   const [curriculumResults, setCurriculumResults] = useState<CurriculumResult[]>([]);
+  const [apcEntries, setApcEntries] = useState<ApcEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage' | 'curriculum' | 'fluence' | 'admin'>('saisie');
+  const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage' | 'curriculum' | 'fluence' | 'apc' | 'admin'>('saisie');
 
   const fetchData = useCallback(async () => {
     try {
@@ -54,6 +56,7 @@ export default function App() {
           setFluenceReferences(data.fluenceReferences || []);
           setCurriculumItems(data.curriculumItems || []);
           setCurriculumResults(data.curriculumResults || []);
+          setApcEntries(data.apcEntries || []);
         } else {
           console.warn('API non disponible (HTML reçu), format vide en attendant.');
         }
@@ -255,6 +258,48 @@ export default function App() {
     }
   }, [fetchData]);
 
+  // --- HANDLERS APC ---
+  const handleSaveApcSession = useCallback(async (payload: {
+    sessionDate: string;
+    notes: string;
+    entries: Array<ApcAssignmentDraft & { studentId: string }>;
+  }) => {
+    const res = await fetch('/api/upsert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'apc_session_save',
+        ...payload
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Échec de l’enregistrement de la séance APC.');
+    }
+    const saved: ApcEntry[] = Array.isArray(data.entries) ? data.entries : [];
+    const savedSessionId: string = data.sessionId || '';
+    setApcEntries(prev => {
+      const remaining = savedSessionId ? prev.filter(e => e.session_id !== savedSessionId) : prev;
+      return [...saved, ...remaining].sort((a, b) => b.session_date.localeCompare(a.session_date));
+    });
+  }, []);
+
+  const handleDeleteApcSession = useCallback(async (sessionId: string) => {
+    const res = await fetch('/api/upsert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'apc_session_delete',
+        sessionId
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Échec de la suppression de la séance APC.');
+    }
+    setApcEntries(prev => prev.filter(e => e.session_id !== sessionId));
+  }, []);
+
   const upsertResult = useCallback(async (
     studentId: string,
     competenceId: number,
@@ -263,7 +308,7 @@ export default function App() {
     setResults((prev) => {
       const next = { ...prev };
       if (!next[studentId]) next[studentId] = {};
-      const current = next[studentId][competenceId] || { studentId, competenceId, score: 0, isStarted: false };
+      const current = next[studentId][competenceId] || { studentId, competenceId, score: null, isStarted: false };
       next[studentId] = { ...next[studentId], [competenceId]: { ...current, ...updates } };
       return next;
     });
@@ -276,7 +321,7 @@ export default function App() {
           type: 'result',
           studentId: String(studentId),
           competenceId: parseInt(competenceId as any, 10),
-          score: updates.score ?? 0,
+          score: updates.score === undefined ? null : updates.score,
           isStarted: updates.isStarted ?? false
         })
       });
@@ -309,7 +354,7 @@ export default function App() {
        students.forEach(s => {
          if (!next[s.id]) next[s.id] = {};
          matchingComps.forEach(comp => {
-            const current = next[s.id][comp.id] || { studentId: s.id, competenceId: comp.id, score: 0, isStarted: false };
+            const current = next[s.id][comp.id] || { studentId: s.id, competenceId: comp.id, score: null, isStarted: false };
             next[s.id] = { ...next[s.id], [comp.id]: { ...current, isStarted } };
          });
        });
@@ -317,24 +362,54 @@ export default function App() {
      });
 
      try {
-        const promises = students.map(s => {
-           return Promise.all(matchingComps.map(comp => {
-              return fetch('/api/upsert', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  type: 'result',
-                  studentId: String(s.id),
-                  competenceId: parseInt(comp.id as any, 10),
-                  score: 0,
-                  isStarted
-                })
-              });
-           }));
+        await fetch('/api/upsert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'result_bulk_start',
+            competenceIds: matchingComps.map(c => parseInt(c.id as any, 10)),
+            studentIds: students.map(s => String(s.id)),
+            isStarted
+          })
         });
-        await Promise.all(promises);
      } catch (e) {
         console.error('Erreur switch compétences', e);
+     }
+  }, [students]);
+
+  const setCompetencesToNE = useCallback(async (competenceIds: number[]) => {
+     if (competenceIds.length === 0) return;
+
+     setResults((prev) => {
+       const next = { ...prev };
+       students.forEach(s => {
+         if (!next[s.id]) next[s.id] = {};
+         const studentMap = { ...next[s.id] };
+         competenceIds.forEach(compId => {
+           studentMap[compId] = {
+             studentId: s.id,
+             competenceId: compId,
+             score: null,
+             isStarted: true
+           };
+         });
+         next[s.id] = studentMap;
+       });
+       return next;
+     });
+
+     try {
+       await fetch('/api/upsert', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+           type: 'result_bulk_ne',
+           competenceIds: competenceIds.map(id => parseInt(id as any, 10)),
+           studentIds: students.map(s => String(s.id))
+         })
+       });
+     } catch (e) {
+       console.error('Erreur passage à NE en masse', e);
      }
   }, [students]);
 
@@ -530,6 +605,9 @@ export default function App() {
             <button onClick={() => setActiveTab('pilotage')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'pilotage' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <BarChart2 className="w-4 h-4" /> Pilotage
             </button>
+            <button onClick={() => setActiveTab('apc')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'apc' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+              <Sparkles className="w-4 h-4" /> APC
+            </button>
             <button onClick={() => setActiveTab('admin')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'admin' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <Settings className="w-4 h-4" /> Admin
             </button>
@@ -546,6 +624,7 @@ export default function App() {
           handleToggleEditMode={handleToggleEditMode}
           toggleArchiveStudent={toggleArchiveStudent}
           startCompetencesForCode={startCompetencesForCode}
+          setCompetencesToNE={setCompetencesToNE}
           upsertResult={upsertResult}
         />
       )}
@@ -563,6 +642,25 @@ export default function App() {
           fluenceReferences={fluenceReferences}
           curriculumItems={curriculumItems}
           curriculumResults={curriculumResults}
+        />
+      )}
+
+      {activeTab === 'apc' && (
+        <ApcTab
+          students={students}
+          activeStudents={activeStudents}
+          competences={competences}
+          results={results}
+          uniqueGrades={uniqueGrades}
+          fluenceScores={fluenceScores}
+          fluenceReferences={fluenceReferences}
+          curriculumItems={curriculumItems}
+          curriculumResults={curriculumResults}
+          apcEntries={apcEntries}
+          isEditMode={isEditMode}
+          handleToggleEditMode={handleToggleEditMode}
+          onSaveApcSession={handleSaveApcSession}
+          onDeleteApcSession={handleDeleteApcSession}
         />
       )}
 

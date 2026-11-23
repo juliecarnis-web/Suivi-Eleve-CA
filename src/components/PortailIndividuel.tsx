@@ -3,6 +3,8 @@ import { BookOpen, Activity, Layers, CheckCircle2, TrendingUp, Award, Search, Us
 import { ResponsiveContainer, ComposedChart, LineChart, BarChart, Bar, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ReferenceLine, Line } from 'recharts';
 import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult } from '../types';
 import { getGrade, getDomain, scaleScore, createDomainSorter } from '../utils/helpers';
+import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
+import BilanGeneratorPanel from './BilanGeneratorPanel';
 
 interface PortailIndividuelProps {
   activeStudents: Student[];
@@ -76,14 +78,17 @@ export default function PortailIndividuel({
     return () => { isMounted = false; };
   }, [portailStudentId, fetchObservations]);
 
-  // Données Bilan par domaine
+  const evaluatedCompMap = useMemo(
+    () => getEvaluatedCompetenceMap(activeStudents, competences, results),
+    [activeStudents, competences, results]
+  );
+
+  // Données Bilan par domaine (exclut les chapitres ouverts sans saisie effective)
   const portailDomainData = useMemo(() => {
     if (!portailStudentId || !currentStudent) return [];
 
     const relevantComps = competences.filter(c => getGrade(c) === currentStudent.grade);
-    const startedComps = relevantComps.filter(c => {
-      return activeStudents.some(st => results[st.id]?.[c.id]?.isStarted);
-    });
+    const startedComps = relevantComps.filter(c => evaluatedCompMap.has(c.id));
 
     const domainMap: Record<string, { studentSum: number, studentStartedCount: number, cohortSum: number, cohortStartedCount: number }> = {};
     
@@ -92,7 +97,7 @@ export default function PortailIndividuel({
       if (!domainMap[d]) domainMap[d] = { studentSum: 0, studentStartedCount: 0, cohortSum: 0, cohortStartedCount: 0 };
       
       const sRes = results[currentStudent.id]?.[c.id];
-      if (sRes && sRes.isStarted && sRes.score !== undefined) {
+      if (sRes && sRes.isStarted && sRes.score !== null && sRes.score !== undefined) {
         domainMap[d].studentSum += sRes.score;
         domainMap[d].studentStartedCount += 1;
       }
@@ -101,7 +106,7 @@ export default function PortailIndividuel({
       let initCount = 0;
       activeStudents.filter(st => st.grade === currentStudent.grade).forEach(st => {
         const res = results[st.id]?.[c.id];
-        if (res && res.isStarted && res.score !== undefined) {
+        if (res && res.isStarted && res.score !== null && res.score !== undefined) {
           cohortSumScore += res.score;
           initCount++;
         }
@@ -126,7 +131,7 @@ export default function PortailIndividuel({
         cohortPoints: info.cohortSum,
       };
     });
-  }, [portailStudentId, currentStudent, activeStudents, competences, results, sortDomains]);
+  }, [portailStudentId, currentStudent, activeStudents, competences, results, sortDomains, evaluatedCompMap]);
 
   const chartPortailData = useMemo(() => {
     return portailDomainData.map((d) => ({
@@ -409,28 +414,31 @@ export default function PortailIndividuel({
                     }}
                   />
                   <Legend verticalAlign="top" height={36} />
-                  <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#fda4af" opacity={0.6} name="Non acquis (< 3)" barSize={15} />
-                  <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#fcd34d" opacity={0.6} name="En cours (3-4)" />
-                  <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#6ee7b7" opacity={0.6} name="Validé (>= 5)" />
-                  <ReferenceLine y={8} yAxisId="left" stroke="#22c55e" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Objectif Atteint (100%)', fill: '#22c55e', fontSize: 12, fontWeight: 'bold' }} />
+                  <Bar yAxisId="left" dataKey="zoneRed" stackId="a" fill="#d1fae5" opacity={0.85} name="Amorcé (< 3)" barSize={15} />
+                  <Bar yAxisId="left" dataKey="zoneOrange" stackId="a" fill="#6ee7b7" opacity={0.65} name="En cours (3–4)" />
+                  <Bar yAxisId="left" dataKey="zoneGreen" stackId="a" fill="#10b981" opacity={0.6} name="Validé (≥ 5)" />
+                  <ReferenceLine y={8} yAxisId="left" stroke="#047857" strokeWidth={2} label={{ position: 'insideTopLeft', value: 'Objectif Atteint (100%)', fill: '#047857', fontSize: 12, fontWeight: 'bold' }} />
                   <Line 
                     yAxisId="left"
                     type="monotone" 
                     dataKey="cohortScaled" 
                     name="Moyenne Classe"
-                    stroke="#4f46e5" 
-                    strokeWidth={3}
-                    strokeDasharray="5 5"
-                    dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
+                    legendType="circle"
+                    stroke="#2563eb" 
+                    strokeWidth={0}
+                    dot={{ r: 5, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }}
+                    activeDot={{ r: 7, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }}
                   />
                   <Line 
                     yAxisId="left"
                     type="monotone" 
                     dataKey="studentScaled" 
                     name="Élève"
-                    stroke="#e6194b" 
-                    strokeWidth={3}
-                    dot={{ r: 4, fill: '#e6194b', strokeWidth: 2, stroke: '#fff' }}
+                    legendType="circle"
+                    stroke="#9333ea" 
+                    strokeWidth={0}
+                    dot={{ r: 6.5, fill: '#9333ea', strokeWidth: 2, stroke: '#fff' }}
+                    activeDot={{ r: 8, fill: '#9333ea', strokeWidth: 2, stroke: '#fff' }}
                   />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -464,6 +472,34 @@ export default function PortailIndividuel({
           </div>
         </div>
       </div>
+
+      {/* 1 bis. Assistant de Bilan Pré-rédigé (Sans IA) */}
+      <BilanGeneratorPanel
+        currentStudent={currentStudent}
+        cohortStudents={portailStudents}
+        activeStudents={activeStudents}
+        competences={competences}
+        results={results}
+        fluenceScores={fluenceScores}
+        fluenceReferences={fluenceReferences}
+        curriculumItems={curriculumItems}
+        curriculumResults={curriculumResults}
+        selectedGradeLabel={portailGrade}
+        onApplyToObservation={async (text) => {
+          const trimmed = portailObservation.trim();
+          const nextVal = trimmed ? `${trimmed}\n\n${text}` : text;
+          setPortailObservation(nextVal);
+          if (portailStudentId) {
+            try {
+              await saveObservation(portailStudentId, nextVal);
+              setObsFeedback('✅ Enregistré');
+              setTimeout(() => setObsFeedback(''), 2000);
+            } catch {
+              setObsFeedback('❌ Erreur');
+            }
+          }
+        }}
+      />
 
       {/* 2. Graphique individuel de progression en fluence de l'élève */}
       <div className="p-6 bg-white border-b border-slate-200">

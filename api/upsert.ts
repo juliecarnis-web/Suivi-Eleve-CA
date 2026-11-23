@@ -159,6 +159,24 @@ async function ensureTables(sql: ReturnType<typeof neon>) {
       );
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS "APC" (
+        "id" text PRIMARY KEY,
+        "session_id" text NOT NULL,
+        "session_date" date NOT NULL,
+        "student_id" text NOT NULL,
+        "competence_id" integer,
+        "chapter_code" text NOT NULL,
+        "chapter_title" text,
+        "domain" text,
+        "sub_domain" text,
+        "focus_type" text DEFAULT 'competence' NOT NULL,
+        "notes" text,
+        "teacher_id" varchar(100) DEFAULT 'JulieCB' NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now()
+      );
+    `;
+
     tablesInitialized = true;
   } catch (err) {
     console.error("Erreur d'initialisation des tables:", err);
@@ -256,6 +274,34 @@ export default async function handler(req: any, res: any) {
         console.warn("Table CurriculumResult non lisible:", e);
       }
 
+      let apcEntries: any[] = [];
+      try {
+        const rawApc = await sql`
+          SELECT
+            "id",
+            "session_id",
+            TO_CHAR("session_date", 'YYYY-MM-DD') as "session_date",
+            "student_id",
+            "competence_id",
+            "chapter_code",
+            "chapter_title",
+            "domain",
+            "sub_domain",
+            "focus_type",
+            "notes",
+            "created_at"
+          FROM "APC"
+          WHERE "teacher_id" = 'JulieCB'
+          ORDER BY "session_date" DESC, "created_at" DESC
+        `;
+        apcEntries = rawApc.map((r: any) => ({
+          ...r,
+          competence_id: r.competence_id !== null && r.competence_id !== undefined ? Number(r.competence_id) : null
+        }));
+      } catch (e) {
+        console.warn("Table APC non lisible:", e);
+      }
+
       return res.status(200).json({
         connected: true,
         students,
@@ -265,7 +311,8 @@ export default async function handler(req: any, res: any) {
         fluenceScores,
         fluenceReferences,
         curriculumItems,
-        curriculumResults
+        curriculumResults,
+        apcEntries
       });
     } catch (error: any) {
       console.error("Erreur globale lors de la lecture des données:", error);
@@ -287,6 +334,7 @@ export default async function handler(req: any, res: any) {
         if (body.table === 'FluenceReference') await sql`DELETE FROM "FluenceReference" WHERE "teacher_id" = 'JulieCB'`;
         if (body.table === 'CurriculumItem') await sql`DELETE FROM "CurriculumItem" WHERE "teacher_id" = 'JulieCB'`;
         if (body.table === 'CurriculumResult') await sql`DELETE FROM "CurriculumResult" WHERE "teacher_id" = 'JulieCB'`;
+        if (body.table === 'APC') await sql`DELETE FROM "APC" WHERE "teacher_id" = 'JulieCB'`;
         return res.status(200).json({ success: true });
       }
 
@@ -337,14 +385,74 @@ export default async function handler(req: any, res: any) {
       }
 
       if (body.type === 'result') {
+        const parsedScore =
+          body.score === null || body.score === undefined || body.score === ''
+            ? null
+            : parseInt(body.score, 10);
         await sql`
           INSERT INTO "Result" ("studentId", "competenceId", "score", "isStarted", "updatedAt", teacher_id)
-          VALUES (${body.studentId}, ${parseInt(body.competenceId)}, ${body.score}, ${body.isStarted}, NOW(), 'JulieCB')
+          VALUES (${body.studentId}, ${parseInt(body.competenceId, 10)}, ${parsedScore}, ${Boolean(body.isStarted)}, NOW(), 'JulieCB')
           ON CONFLICT ("studentId", "competenceId") DO UPDATE SET
             "score" = EXCLUDED."score",
             "isStarted" = EXCLUDED."isStarted",
             "updatedAt" = NOW()
         `;
+        return res.status(200).json({ success: true });
+      }
+
+      if (body.type === 'result_bulk_ne') {
+        const competenceIds: number[] = Array.isArray(body.competenceIds)
+          ? body.competenceIds.map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id))
+          : [];
+        const studentIds: string[] = Array.isArray(body.studentIds)
+          ? body.studentIds.map((id: any) => String(id))
+          : [];
+
+        if (competenceIds.length > 0 && studentIds.length > 0) {
+          for (const compId of competenceIds) {
+            for (const stId of studentIds) {
+              await sql`
+                INSERT INTO "Result" ("studentId", "competenceId", "score", "isStarted", "updatedAt", teacher_id)
+                VALUES (${stId}, ${compId}, ${null}, true, NOW(), 'JulieCB')
+                ON CONFLICT ("studentId", "competenceId") DO UPDATE SET
+                  "score" = NULL,
+                  "isStarted" = true,
+                  "updatedAt" = NOW()
+              `;
+            }
+          }
+        } else if (competenceIds.length > 0) {
+          for (const compId of competenceIds) {
+            await sql`
+              UPDATE "Result"
+              SET "score" = NULL, "isStarted" = true, "updatedAt" = NOW()
+              WHERE "competenceId" = ${compId} AND "teacher_id" = 'JulieCB'
+            `;
+          }
+        }
+        return res.status(200).json({ success: true });
+      }
+
+      if (body.type === 'result_bulk_start') {
+        const competenceIds: number[] = Array.isArray(body.competenceIds)
+          ? body.competenceIds.map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id))
+          : [];
+        const studentIds: string[] = Array.isArray(body.studentIds)
+          ? body.studentIds.map((id: any) => String(id))
+          : [];
+        const isStarted = Boolean(body.isStarted);
+
+        for (const compId of competenceIds) {
+          for (const stId of studentIds) {
+            await sql`
+              INSERT INTO "Result" ("studentId", "competenceId", "score", "isStarted", "updatedAt", teacher_id)
+              VALUES (${stId}, ${compId}, ${null}, ${isStarted}, NOW(), 'JulieCB')
+              ON CONFLICT ("studentId", "competenceId") DO UPDATE SET
+                "isStarted" = EXCLUDED."isStarted",
+                "updatedAt" = NOW()
+            `;
+          }
+        }
         return res.status(200).json({ success: true });
       }
 
@@ -528,6 +636,101 @@ export default async function handler(req: any, res: any) {
             `;
           }
         }
+        return res.status(200).json({ success: true });
+      }
+
+      if (body.type === 'apc_session_save') {
+        const sessionDate = typeof body.sessionDate === 'string' ? body.sessionDate.trim() : '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) {
+          return res.status(400).json({ error: 'Date de séance invalide (YYYY-MM-DD attendu).' });
+        }
+
+        const rawEntries = Array.isArray(body.entries) ? body.entries : [];
+        if (rawEntries.length === 0) {
+          return res.status(400).json({ error: 'Aucune entrée élève fournie pour la séance APC.' });
+        }
+
+        const allowedFocus = new Set(['competence', 'theme', 'fluence', 'curriculum', 'custom']);
+        const sessionId =
+          typeof body.sessionId === 'string' && body.sessionId.trim()
+            ? body.sessionId.trim().slice(0, 100)
+            : `apc_${sessionDate}_${Date.now()}`;
+        const sessionNotes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 1000) : '';
+
+        // Si mise à jour d'une session existante, on remplace proprement ses lignes
+        await sql`DELETE FROM "APC" WHERE "session_id" = ${sessionId} AND "teacher_id" = 'JulieCB'`;
+
+        const savedEntries: any[] = [];
+        for (let idx = 0; idx < rawEntries.length; idx++) {
+          const item = rawEntries[idx];
+          const studentId = typeof item.studentId === 'string' ? item.studentId.trim() : '';
+          const chapterCode = typeof item.chapterCode === 'string' ? item.chapterCode.trim().slice(0, 120) : '';
+          if (!studentId || !chapterCode) continue;
+
+          const parsedCompId =
+            item.competenceId !== null && item.competenceId !== undefined && item.competenceId !== ''
+              ? parseInt(item.competenceId, 10)
+              : null;
+          const competenceId = parsedCompId !== null && !isNaN(parsedCompId) ? parsedCompId : null;
+          const chapterTitle = typeof item.chapterTitle === 'string' ? item.chapterTitle.trim().slice(0, 400) : '';
+          const domain = typeof item.domain === 'string' ? item.domain.trim().slice(0, 200) : '';
+          const subDomain = typeof item.subDomain === 'string' ? item.subDomain.trim().slice(0, 200) : '';
+          const focusType = allowedFocus.has(item.focusType) ? item.focusType : 'competence';
+          const entryNotes =
+            typeof item.notes === 'string' && item.notes.trim()
+              ? item.notes.trim().slice(0, 1000)
+              : sessionNotes;
+          const entryId =
+            typeof item.id === 'string' && item.id.trim()
+              ? item.id.trim().slice(0, 120)
+              : `${sessionId}_${studentId}_${idx}`;
+
+          await sql`
+            INSERT INTO "APC" (
+              "id", "session_id", "session_date", "student_id", "competence_id",
+              "chapter_code", "chapter_title", "domain", "sub_domain",
+              "focus_type", "notes", "teacher_id", "created_at"
+            )
+            VALUES (
+              ${entryId}, ${sessionId}, ${sessionDate}::date, ${studentId}, ${competenceId},
+              ${chapterCode}, ${chapterTitle}, ${domain}, ${subDomain},
+              ${focusType}, ${entryNotes}, 'JulieCB', NOW()
+            )
+          `;
+
+          savedEntries.push({
+            id: entryId,
+            session_id: sessionId,
+            session_date: sessionDate,
+            student_id: studentId,
+            competence_id: competenceId,
+            chapter_code: chapterCode,
+            chapter_title: chapterTitle,
+            domain,
+            sub_domain: subDomain,
+            focus_type: focusType,
+            notes: entryNotes
+          });
+        }
+
+        return res.status(200).json({ success: true, sessionId, entries: savedEntries });
+      }
+
+      if (body.type === 'apc_session_delete') {
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
+        if (!sessionId) {
+          return res.status(400).json({ error: 'Identifiant de séance manquant.' });
+        }
+        await sql`DELETE FROM "APC" WHERE "session_id" = ${sessionId} AND "teacher_id" = 'JulieCB'`;
+        return res.status(200).json({ success: true });
+      }
+
+      if (body.type === 'apc_entry_delete') {
+        const entryId = typeof body.id === 'string' ? body.id.trim() : '';
+        if (!entryId) {
+          return res.status(400).json({ error: 'Identifiant d’entrée manquant.' });
+        }
+        await sql`DELETE FROM "APC" WHERE "id" = ${entryId} AND "teacher_id" = 'JulieCB'`;
         return res.status(200).json({ success: true });
       }
 

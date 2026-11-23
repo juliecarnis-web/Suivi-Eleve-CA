@@ -202,19 +202,22 @@ export default function SaisieGroupsModal({
       }
 
       let anyStarted = false;
+      let scoredCount = 0;
       let sum = 0;
       let nonZeroCount = 0;
 
       gradeStudents.forEach(st => {
         const res = results[st.id]?.[comp.id];
         if (res?.isStarted) anyStarted = true;
-        const sc = res?.score ?? 0;
-        sum += sc;
-        if (sc > 0) nonZeroCount++;
+        if (res?.isStarted && res.score !== null && res.score !== undefined) {
+          scoredCount++;
+          sum += res.score;
+          if (res.score > 0) nonZeroCount++;
+        }
       });
 
-      const classAvg = sum / gradeStudents.length;
-      const nonZeroRatio = nonZeroCount / gradeStudents.length;
+      const classAvg = scoredCount > 0 ? sum / scoredCount : 0;
+      const nonZeroRatio = scoredCount > 0 ? nonZeroCount / scoredCount : 0;
 
       const isEvaluated =
         anyStarted &&
@@ -261,7 +264,11 @@ export default function SaisieGroupsModal({
     const map = new Map<string, ResolvedSaisieStudent>();
 
     const computeAvg = (studentId: string, comps: Competence[]) => {
-      const evaluated = comps.filter(c => competenceEvalMap.get(c.id)?.isEvaluated);
+      const evaluated = comps.filter(c => {
+        if (!competenceEvalMap.get(c.id)?.isEvaluated) return false;
+        const res = results[studentId]?.[c.id];
+        return Boolean(res?.isStarted && res.score !== null && res.score !== undefined);
+      });
       if (evaluated.length === 0) return null;
       const sum = evaluated.reduce((acc, c) => acc + (results[studentId]?.[c.id]?.score ?? 0), 0);
       return {
