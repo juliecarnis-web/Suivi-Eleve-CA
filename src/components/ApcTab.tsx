@@ -15,7 +15,8 @@ import {
   FileText,
   Trash2,
   CheckCircle2,
-  Clock
+  Clock,
+  Monitor
 } from 'lucide-react';
 import {
   Student,
@@ -26,7 +27,8 @@ import {
   CurriculumItem,
   CurriculumResult,
   ApcEntry,
-  ApcFocusType
+  ApcFocusType,
+  ApcModality
 } from '../types';
 import { cn, getCode, getGrade, getDomain, createDomainSorter } from '../utils/helpers';
 import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
@@ -37,6 +39,7 @@ import {
   formatDateFr
 } from '../utils/apcBilanGenerator';
 import ApcBilanModal from './ApcBilanModal';
+import ApcTniModal, { ApcTniItem } from './ApcTniModal';
 
 export interface ApcAssignmentDraft {
   competenceId: number | null;
@@ -45,6 +48,7 @@ export interface ApcAssignmentDraft {
   domain: string;
   subDomain: string;
   focusType: ApcFocusType;
+  modality: ApcModality;
 }
 
 interface ApcTabProps {
@@ -93,7 +97,8 @@ function getDefaultAssignmentForPlan(plan: StudentApcPlan): ApcAssignmentDraft {
       chapterTitle: firstNeed.title,
       domain: firstNeed.domain,
       subDomain: firstNeed.subDomain,
-      focusType: 'competence'
+      focusType: 'competence',
+      modality: 'individuel'
     };
   }
   if (plan.fluenceNeed) {
@@ -103,7 +108,8 @@ function getDefaultAssignmentForPlan(plan: StudentApcPlan): ApcAssignmentDraft {
       chapterTitle: `Lecture Fluence (objectif ${plan.fluenceNeed.target} MCLM)`,
       domain: 'Lecture / Fluence',
       subDomain: 'Fluence',
-      focusType: 'fluence'
+      focusType: 'fluence',
+      modality: 'individuel'
     };
   }
   if (plan.curriculumSuggestions[0]) {
@@ -114,7 +120,8 @@ function getDefaultAssignmentForPlan(plan: StudentApcPlan): ApcAssignmentDraft {
       chapterTitle: item.title,
       domain: item.domain,
       subDomain: item.subDomain || '',
-      focusType: 'curriculum'
+      focusType: 'curriculum',
+      modality: 'individuel'
     };
   }
   return {
@@ -123,7 +130,8 @@ function getDefaultAssignmentForPlan(plan: StudentApcPlan): ApcAssignmentDraft {
     chapterTitle: 'Consolidation / Tutorat',
     domain: 'Transversal',
     subDomain: '',
-    focusType: 'custom'
+    focusType: 'custom',
+    modality: 'individuel'
   };
 }
 
@@ -151,10 +159,12 @@ export default function ApcTab({
   const [viewMode, setViewMode] = useState<'individual' | 'workshop'>('individual');
   const [workshopGrouping, setWorkshopGrouping] = useState<'theme' | 'competence'>('theme');
 
-  // Brouillon de séance APC à enregistrer dans Neon
+  // Brouillon de séance APC : seules les sélections explicitement cochées sont enregistrées et affichées au TNI
   const [sessionDate, setSessionDate] = useState<string>(() => getTodayIso());
   const [sessionNotes, setSessionNotes] = useState<string>('');
   const [draftAssignments, setDraftAssignments] = useState<Record<string, ApcAssignmentDraft>>({});
+  const [studentModalities, setStudentModalities] = useState<Record<string, ApcModality>>({});
+  const [workshopModalities, setWorkshopModalities] = useState<Record<string, ApcModality>>({});
   const [isSavingSession, setIsSavingSession] = useState<boolean>(false);
   const [saveFeedback, setSaveFeedback] = useState<string>('');
 
@@ -163,6 +173,7 @@ export default function ApcTab({
   const [historyEndDate, setHistoryEndDate] = useState<string>('');
   const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
   const [isBilanModalOpen, setIsBilanModalOpen] = useState<boolean>(false);
+  const [isTniModalOpen, setIsTniModalOpen] = useState<boolean>(false);
 
   const sortDomains = useMemo(() => createDomainSorter(competences), [competences]);
 
@@ -240,61 +251,193 @@ export default function ApcTab({
     ]
   );
 
-  // Initialiser automatiquement l'affectation par défaut pour chaque nouvel élève coché
+  // Nettoyer les affectations si un élève est décoché de la liste des volontaires
   useEffect(() => {
-    if (report.studentPlans.length === 0) return;
     setDraftAssignments(prev => {
       let changed = false;
-      const next = { ...prev };
-      report.studentPlans.forEach(plan => {
-        if (!next[plan.student.id]) {
-          next[plan.student.id] = getDefaultAssignmentForPlan(plan);
+      const next: Record<string, ApcAssignmentDraft> = {};
+      Object.entries(prev).forEach(([stId, val]) => {
+        if (selectedIds.has(stId)) {
+          next[stId] = val;
+        } else {
           changed = true;
         }
       });
       return changed ? next : prev;
     });
-  }, [report.studentPlans]);
+  }, [selectedIds]);
 
-  const setStudentAssignment = (studentId: string, assignment: ApcAssignmentDraft) => {
+  const setStudentAssignment = (
+    studentId: string,
+    assignment: Omit<ApcAssignmentDraft, 'modality'> & { modality?: ApcModality }
+  ) => {
+    const resolvedModality =
+      assignment.modality ??
+      draftAssignments[studentId]?.modality ??
+      studentModalities[studentId] ??
+      'individuel';
+
+    setStudentModalities(prev => ({ ...prev, [studentId]: resolvedModality }));
     setDraftAssignments(prev => ({
       ...prev,
-      [studentId]: assignment
+      [studentId]: {
+        ...assignment,
+        modality: resolvedModality
+      }
     }));
   };
 
-  const applyWorkshopCompetenceToGroup = (comp: Competence, targetStudentIds?: string[]) => {
+  const removeStudentAssignment = (studentId: string) => {
+    setDraftAssignments(prev => {
+      if (!prev[studentId]) return prev;
+      const next = { ...prev };
+      delete next[studentId];
+      return next;
+    });
+  };
+
+  const setStudentModality = (studentId: string, modality: ApcModality) => {
+    setStudentModalities(prev => ({ ...prev, [studentId]: modality }));
+    setDraftAssignments(prev => {
+      if (!prev[studentId]) return prev;
+      return {
+        ...prev,
+        [studentId]: {
+          ...prev[studentId],
+          modality
+        }
+      };
+    });
+  };
+
+  const applyModalityToSelected = (modality: ApcModality) => {
+    setStudentModalities(prev => {
+      const next = { ...prev };
+      selectedStudents.forEach(s => {
+        next[s.id] = modality;
+      });
+      return next;
+    });
+    setDraftAssignments(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(stId => {
+        next[stId] = {
+          ...next[stId],
+          modality
+        };
+      });
+      return next;
+    });
+  };
+
+  const preselectFirstNeedForAll = () => {
+    setDraftAssignments(prev => {
+      const next = { ...prev };
+      report.studentPlans.forEach(plan => {
+        if (!next[plan.student.id]) {
+          const def = getDefaultAssignmentForPlan(plan);
+          next[plan.student.id] = {
+            ...def,
+            modality: studentModalities[plan.student.id] ?? def.modality
+          };
+        }
+      });
+      return next;
+    });
+  };
+
+  const clearAllRetained = () => {
+    setDraftAssignments({});
+  };
+
+  const toggleWorkshopCompetenceForGroup = (
+    comp: Competence,
+    targetStudentIds: string[],
+    allAlreadyAssigned: boolean,
+    modality: ApcModality
+  ) => {
     const code = getCode(comp);
     const title = cleanTitle(comp.title);
     const domain = getDomain(comp) || 'Sans domaine';
     const subDomain = (comp.subDomain || '').trim();
-    const ids = targetStudentIds && targetStudentIds.length > 0
-      ? targetStudentIds
-      : selectedStudents.filter(s => s.grade === getGrade(comp)).map(s => s.id);
 
+    if (allAlreadyAssigned) {
+      setDraftAssignments(prev => {
+        const next = { ...prev };
+        targetStudentIds.forEach(id => {
+          if (next[id]?.competenceId === comp.id || next[id]?.chapterCode === code) {
+            delete next[id];
+          }
+        });
+        return next;
+      });
+      setSaveFeedback(`Atelier « ${code} » retiré de la séance.`);
+      setTimeout(() => setSaveFeedback(''), 2500);
+      return;
+    }
+
+    setStudentModalities(prev => {
+      const next = { ...prev };
+      targetStudentIds.forEach(id => {
+        next[id] = modality;
+      });
+      return next;
+    });
     setDraftAssignments(prev => {
       const next = { ...prev };
-      ids.forEach(id => {
+      targetStudentIds.forEach(id => {
         next[id] = {
           competenceId: comp.id,
           chapterCode: code,
           chapterTitle: title,
           domain,
           subDomain,
-          focusType: 'competence'
+          focusType: 'competence',
+          modality
         };
       });
       return next;
     });
-    setSaveFeedback(`Atelier « ${code} » affecté aux élèves concernés (prêt à enregistrer).`);
+    setSaveFeedback(`Atelier « ${code} » coché pour ${targetStudentIds.length} élève(s) (séance & TNI).`);
     setTimeout(() => setSaveFeedback(''), 3000);
   };
 
-  const applyWorkshopThemeToSelected = (
+  const toggleWorkshopThemeForSelected = (
+    themeKey: string,
     domain: string,
     subDomain: string,
-    impactedStudents: Array<{ student: Student; codes: string[] }>
+    impactedStudents: Array<{ student: Student; codes: string[] }>,
+    allAlreadyAssigned: boolean,
+    modality: ApcModality
   ) => {
+    if (allAlreadyAssigned) {
+      setDraftAssignments(prev => {
+        const next = { ...prev };
+        impactedStudents.forEach(item => {
+          const cur = next[item.student.id];
+          if (
+            cur &&
+            ((cur.domain === domain && cur.subDomain === subDomain) ||
+              item.codes.includes(cur.chapterCode))
+          ) {
+            delete next[item.student.id];
+          }
+        });
+        return next;
+      });
+      setSaveFeedback(`Atelier « ${subDomain} » retiré de la séance.`);
+      setTimeout(() => setSaveFeedback(''), 2500);
+      return;
+    }
+
+    setWorkshopModalities(prev => ({ ...prev, [themeKey]: modality }));
+    setStudentModalities(prev => {
+      const next = { ...prev };
+      impactedStudents.forEach(item => {
+        next[item.student.id] = modality;
+      });
+      return next;
+    });
     setDraftAssignments(prev => {
       const next = { ...prev };
       impactedStudents.forEach(item => {
@@ -308,12 +451,13 @@ export default function ApcTab({
           chapterTitle: matchingComp ? cleanTitle(matchingComp.title) : subDomain,
           domain,
           subDomain,
-          focusType: matchingComp ? 'competence' : 'theme'
+          focusType: matchingComp ? 'competence' : 'theme',
+          modality
         };
       });
       return next;
     });
-    setSaveFeedback(`Thème « ${subDomain} » affecté aux élèves concernés (prêt à enregistrer).`);
+    setSaveFeedback(`Atelier « ${subDomain} » coché pour ${impactedStudents.length} élève(s) (séance & TNI).`);
     setTimeout(() => setSaveFeedback(''), 3000);
   };
 
@@ -338,18 +482,24 @@ export default function ApcTab({
     setSelectedIds(new Set());
   };
 
+  const retainedEntries = useMemo(() => {
+    return report.studentPlans
+      .filter(plan => Boolean(draftAssignments[plan.student.id]))
+      .map(plan => ({
+        plan,
+        chosen: draftAssignments[plan.student.id]
+      }));
+  }, [report.studentPlans, draftAssignments]);
+
   const handleSaveSession = async () => {
-    if (selectedStudents.length === 0 || !sessionDate) return;
+    if (retainedEntries.length === 0 || !sessionDate) return;
     setIsSavingSession(true);
     setSaveFeedback('');
     try {
-      const entries = report.studentPlans.map(plan => {
-        const chosen = draftAssignments[plan.student.id] || getDefaultAssignmentForPlan(plan);
-        return {
-          studentId: plan.student.id,
-          ...chosen
-        };
-      });
+      const entries = retainedEntries.map(({ plan, chosen }) => ({
+        studentId: plan.student.id,
+        ...chosen
+      }));
 
       await onSaveApcSession({
         sessionDate,
@@ -379,6 +529,19 @@ export default function ApcTab({
   );
 
   const studentMap = useMemo(() => new Map(students.map(s => [s.id, s])), [students]);
+
+  const tniItems: ApcTniItem[] = useMemo(
+    () =>
+      retainedEntries.map(({ plan, chosen }) => ({
+        student: plan.student,
+        chapterCode: chosen.chapterCode,
+        chapterTitle: chosen.chapterTitle,
+        domain: chosen.domain,
+        subDomain: chosen.subDomain,
+        modality: chosen.modality || 'individuel'
+      })),
+    [retainedEntries]
+  );
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -448,6 +611,22 @@ export default function ApcTab({
         </div>
 
         <div className="flex items-center gap-2">
+          {subTab === 'prepare' && (
+            <button
+              type="button"
+              onClick={() => setIsTniModalOpen(true)}
+              disabled={retainedEntries.length === 0}
+              title={
+                retainedEntries.length === 0
+                  ? 'Cochez au moins un plan ou atelier ci-dessous pour l’afficher au TNI'
+                  : 'Ouvrir l’affichage TNI sobre pour les sélections cochées'
+              }
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white transition-colors shadow-2xs"
+            >
+              <Monitor className="w-4 h-4" />
+              Affichage TNI ({retainedEntries.length})
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setIsBilanModalOpen(true)}
@@ -625,41 +804,101 @@ export default function ApcTab({
                         <button
                           type="button"
                           onClick={handleSaveSession}
-                          disabled={!isEditMode || isSavingSession || selectedStudents.length === 0 || !sessionDate}
+                          disabled={!isEditMode || isSavingSession || retainedEntries.length === 0 || !sessionDate}
                           className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold shadow transition flex items-center justify-center gap-2"
                         >
                           <Save className="w-4 h-4" />
                           {isSavingSession
                             ? 'Enregistrement...'
-                            : `Enregistrer la séance (${selectedStudents.length})`}
+                            : `Enregistrer la séance (${retainedEntries.length})`}
                         </button>
                       </div>
                     </div>
 
-                    {selectedStudents.length > 0 && (
-                      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-600 mr-1">
-                          Objectifs prêts :
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-slate-700">
+                          Cochés pour la séance &amp; le TNI ({retainedEntries.length} / {selectedStudents.length}) :
                         </span>
-                        {report.studentPlans.map(plan => {
-                          const chosen = draftAssignments[plan.student.id] || getDefaultAssignmentForPlan(plan);
-                          return (
-                            <button
-                              type="button"
-                              key={plan.student.id}
-                              onClick={() => setViewMode('individual')}
-                              title={`${plan.student.firstName} — ${chosen.chapterCode}${chosen.chapterTitle ? ` : ${chosen.chapterTitle}` : ''} (cliquer pour modifier)`}
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 hover:border-indigo-300 px-2 py-0.5 rounded-md transition"
-                            >
-                              <span>{plan.student.firstName}</span>
-                              <span className="font-mono font-bold text-indigo-700">
-                                {chosen.chapterCode}
-                              </span>
-                            </button>
-                          );
-                        })}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={preselectFirstNeedForAll}
+                            className="text-[11px] font-semibold px-2 py-0.5 rounded bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 transition"
+                          >
+                            Pré-cocher 1er besoin
+                          </button>
+                          {retainedEntries.length > 0 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => applyModalityToSelected('individuel')}
+                                className="text-[11px] font-semibold px-2 py-0.5 rounded bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 transition"
+                              >
+                                Tout Individuel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => applyModalityToSelected('autonomie')}
+                                className="text-[11px] font-semibold px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 transition"
+                              >
+                                Tout Autonomie
+                              </button>
+                              <button
+                                type="button"
+                                onClick={clearAllRetained}
+                                className="text-[11px] font-semibold px-2 py-0.5 rounded bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 transition"
+                              >
+                                Tout décocher
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    )}
+
+                      {retainedEntries.length === 0 ? (
+                        <p className="text-xs text-slate-500">
+                          Cochez ci-dessous un <strong>Plan par élève</strong> ou un <strong>Atelier commun</strong> : seuls les choix cochés ici seront enregistrés et projetés au TNI.
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {retainedEntries.map(({ plan, chosen }) => {
+                            const mod = chosen.modality || 'individuel';
+                            return (
+                              <span
+                                key={plan.student.id}
+                                title={`${plan.student.firstName} — ${chosen.chapterCode}${chosen.chapterTitle ? ` : ${chosen.chapterTitle}` : ''} (${mod === 'autonomie' ? 'Autonomie' : 'Individuel'})`}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-slate-700 border border-emerald-300 px-2 py-0.5 rounded-md shadow-2xs"
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span>{plan.student.firstName}</span>
+                                <span className="font-mono font-bold text-indigo-700">
+                                  {chosen.chapterCode}
+                                </span>
+                                <span
+                                  className={cn(
+                                    'text-[10px] font-bold px-1 rounded',
+                                    mod === 'autonomie'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-indigo-100 text-indigo-800'
+                                  )}
+                                >
+                                  {mod === 'autonomie' ? 'Auton.' : 'Indiv.'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeStudentAssignment(plan.student.id)}
+                                  title={`Retirer ${plan.student.firstName} de la séance et du TNI`}
+                                  className="ml-0.5 text-slate-400 hover:text-rose-600 font-bold leading-none"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
 
                     {saveFeedback && (
                       <div className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-center gap-2">
@@ -744,17 +983,21 @@ export default function ApcTab({
                             <button
                               type="button"
                               key={student.id}
-                              onClick={() =>
-                                setStudentAssignment(student.id, {
-                                  competenceId: null,
-                                  chapterCode: `FLUENCE-P${need.period}`,
-                                  chapterTitle: `Lecture Fluence (objectif ${need.target} MCLM)`,
-                                  domain: 'Lecture / Fluence',
-                                  subDomain: 'Fluence',
-                                  focusType: 'fluence'
-                                })
-                              }
-                              title="Cliquer pour retenir Fluence pour cet élève"
+                              onClick={() => {
+                                if (isFluenceAssigned) {
+                                  removeStudentAssignment(student.id);
+                                } else {
+                                  setStudentAssignment(student.id, {
+                                    competenceId: null,
+                                    chapterCode: `FLUENCE-P${need.period}`,
+                                    chapterTitle: `Lecture Fluence (objectif ${need.target} MCLM)`,
+                                    domain: 'Lecture / Fluence',
+                                    subDomain: 'Fluence',
+                                    focusType: 'fluence'
+                                  });
+                                }
+                              }}
+                              title={isFluenceAssigned ? 'Cliquer pour décocher Fluence' : 'Cliquer pour cocher Fluence (séance & TNI)'}
                               className={cn(
                                 'rounded-lg px-3 py-1.5 text-xs flex items-center gap-2 shadow-2xs transition border',
                                 isFluenceAssigned
@@ -762,7 +1005,11 @@ export default function ApcTab({
                                   : 'bg-white hover:bg-indigo-100 border-indigo-200 text-slate-800'
                               )}
                             >
-                              {isFluenceAssigned && <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />}
+                              {isFluenceAssigned ? (
+                                <CheckSquare className="w-3.5 h-3.5 shrink-0" />
+                              ) : (
+                                <Square className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                              )}
                               <span className="font-bold">{student.firstName}</span>
                               <span className={cn('text-[11px] font-semibold', isFluenceAssigned ? 'text-emerald-100' : 'text-slate-500')}>
                                 ({student.grade})
@@ -780,11 +1027,12 @@ export default function ApcTab({
                     </div>
                   )}
 
-                  {/* VUE 1 : PLAN PAR ÉLÈVE (avec sélection du chapitre retenu) */}
+                  {/* VUE 1 : PLAN PAR ÉLÈVE (cases à cocher explicites pour séance & TNI) */}
                   {viewMode === 'individual' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {report.studentPlans.map(plan => {
-                        const chosen = draftAssignments[plan.student.id] || getDefaultAssignmentForPlan(plan);
+                        const chosen = draftAssignments[plan.student.id] || null;
+                        const activeModality = chosen?.modality || studentModalities[plan.student.id] || 'individuel';
                         const topPriorities = [
                           ...plan.urgentNeeds.slice(0, 3),
                           ...plan.consolidateNeeds.slice(0, Math.max(0, 4 - Math.min(3, plan.urgentNeeds.length)))
@@ -794,7 +1042,10 @@ export default function ApcTab({
                         return (
                           <div
                             key={plan.student.id}
-                            className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3"
+                            className={cn(
+                              'bg-white rounded-xl border shadow-sm p-4 flex flex-col gap-3 transition',
+                              chosen ? 'border-emerald-300 ring-1 ring-emerald-200' : 'border-slate-200'
+                            )}
                           >
                             <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
                               <div>
@@ -810,28 +1061,90 @@ export default function ApcTab({
                                 </p>
                               </div>
 
-                              {plan.isAllMastered && (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                  <Award className="w-3.5 h-3.5 text-emerald-700" />
-                                  Tout validé
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5">
+                                {plan.isAllMastered && (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                    <Award className="w-3.5 h-3.5 text-emerald-700" />
+                                    Tout validé
+                                  </span>
+                                )}
+                                {chosen ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeStudentAssignment(plan.student.id)}
+                                    title="Cliquer pour décocher cet élève de la séance et du TNI"
+                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-0.5 rounded-md transition"
+                                  >
+                                    <CheckSquare className="w-3.5 h-3.5" />
+                                    Retenu
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
+                                    Non coché
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
-                            {/* Chapitre retenu pour l'enregistrement */}
-                            <div className="bg-indigo-50/70 border border-indigo-200 rounded-lg p-2.5 space-y-1.5">
-                              <div className="flex items-center justify-between gap-2">
+                            {/* Chapitre retenu + modalité (Individuel / Autonomie) */}
+                            <div
+                              className={cn(
+                                'border rounded-lg p-2.5 space-y-2',
+                                chosen ? 'bg-indigo-50/70 border-indigo-200' : 'bg-slate-50 border-slate-200'
+                              )}
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800">
-                                  Chapitre retenu pour la séance :
+                                  Chapitre &amp; modalité :
                                 </span>
-                                <span className="text-[11px] font-extrabold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
-                                  {chosen.chapterCode}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center bg-white rounded-md border border-indigo-200 p-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setStudentModality(plan.student.id, 'individuel')}
+                                      className={cn(
+                                        'px-2 py-0.5 rounded text-[10px] font-bold transition',
+                                        activeModality === 'individuel'
+                                          ? 'bg-indigo-600 text-white shadow-2xs'
+                                          : 'text-slate-600 hover:text-slate-900'
+                                      )}
+                                    >
+                                      Individuel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setStudentModality(plan.student.id, 'autonomie')}
+                                      className={cn(
+                                        'px-2 py-0.5 rounded text-[10px] font-bold transition',
+                                        activeModality === 'autonomie'
+                                          ? 'bg-emerald-600 text-white shadow-2xs'
+                                          : 'text-slate-600 hover:text-slate-900'
+                                      )}
+                                    >
+                                      Autonomie
+                                    </button>
+                                  </div>
+                                  {chosen && (
+                                    <span className="text-[11px] font-extrabold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                                      {chosen.chapterCode}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <select
-                                value={chosen.competenceId !== null ? String(chosen.competenceId) : `__special__${chosen.chapterCode}`}
+                                value={
+                                  !chosen
+                                    ? ''
+                                    : chosen.competenceId !== null
+                                      ? String(chosen.competenceId)
+                                      : `__special__${chosen.chapterCode}`
+                                }
                                 onChange={e => {
                                   const val = e.target.value;
+                                  if (!val) {
+                                    removeStudentAssignment(plan.student.id);
+                                    return;
+                                  }
                                   if (val === '__fluence__') {
                                     setStudentAssignment(plan.student.id, {
                                       competenceId: null,
@@ -869,7 +1182,8 @@ export default function ApcTab({
                                 }}
                                 className="w-full px-2.5 py-1 bg-white border border-indigo-200 rounded text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
                               >
-                                {chosen.competenceId === null && (
+                                <option value="">-- Ne pas retenir pour le moment --</option>
+                                {chosen && chosen.competenceId === null && (
                                   <option value={`__special__${chosen.chapterCode}`}>
                                     {chosen.chapterCode} — {chosen.chapterTitle}
                                   </option>
@@ -884,57 +1198,68 @@ export default function ApcTab({
                               </select>
                             </div>
 
-                            {/* Suggestions cliquables */}
+                            {/* Suggestions cochables */}
                             {topPriorities.length > 0 ? (
                               <div className="space-y-1.5">
                                 <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                                  Suggestions prioritaires (cliquer pour retenir)
+                                  Suggestions prioritaires (cocher pour séance &amp; TNI)
                                 </p>
                                 {topPriorities.map(need => {
-                                  const isSelectedChapter = chosen.competenceId === need.competence.id;
+                                  const isSelectedChapter = chosen?.competenceId === need.competence.id;
                                   return (
                                     <button
                                       type="button"
                                       key={need.competence.id}
-                                      onClick={() =>
-                                        setStudentAssignment(plan.student.id, {
-                                          competenceId: need.competence.id,
-                                          chapterCode: need.code,
-                                          chapterTitle: need.title,
-                                          domain: need.domain,
-                                          subDomain: need.subDomain,
-                                          focusType: 'competence'
-                                        })
-                                      }
+                                      onClick={() => {
+                                        if (isSelectedChapter) {
+                                          removeStudentAssignment(plan.student.id);
+                                        } else {
+                                          setStudentAssignment(plan.student.id, {
+                                            competenceId: need.competence.id,
+                                            chapterCode: need.code,
+                                            chapterTitle: need.title,
+                                            domain: need.domain,
+                                            subDomain: need.subDomain,
+                                            focusType: 'competence'
+                                          });
+                                        }
+                                      }}
                                       className={cn(
                                         'w-full text-left p-2.5 rounded-lg border flex items-start justify-between gap-2.5 transition',
                                         isSelectedChapter
-                                          ? 'border-indigo-500 bg-indigo-50/40 ring-1 ring-indigo-500'
+                                          ? 'border-emerald-500 bg-emerald-50/60 ring-1 ring-emerald-400'
                                           : 'border-slate-200 bg-slate-50/70 hover:bg-slate-100/70'
                                       )}
                                     >
-                                      <div className="min-w-0">
-                                        <div className="flex flex-wrap items-center gap-1.5">
-                                          <span className="text-xs font-extrabold text-slate-800">
-                                            {need.code}
-                                          </span>
-                                          <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
-                                            {need.domain}
-                                          </span>
-                                          <span
-                                            className={cn(
-                                              'text-[10px] font-bold px-1.5 py-0.5 rounded border',
-                                              need.priority === 'urgent'
-                                                ? 'text-emerald-900 bg-emerald-100 border-emerald-200'
-                                                : 'text-emerald-900 bg-emerald-200/80 border-emerald-300'
-                                            )}
-                                          >
-                                            {need.priority === 'urgent' ? 'À amorcer' : 'Palier 5 proche'}
-                                          </span>
+                                      <div className="flex items-start gap-2 min-w-0">
+                                        {isSelectedChapter ? (
+                                          <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                                        ) : (
+                                          <Square className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                                        )}
+                                        <div className="min-w-0">
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            <span className="text-xs font-extrabold text-slate-800">
+                                              {need.code}
+                                            </span>
+                                            <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                                              {need.domain}
+                                            </span>
+                                            <span
+                                              className={cn(
+                                                'text-[10px] font-bold px-1.5 py-0.5 rounded border',
+                                                need.priority === 'urgent'
+                                                  ? 'text-emerald-900 bg-emerald-100 border-emerald-200'
+                                                  : 'text-emerald-900 bg-emerald-200/80 border-emerald-300'
+                                              )}
+                                            >
+                                              {need.priority === 'urgent' ? 'À amorcer' : 'Palier 5 proche'}
+                                            </span>
+                                          </div>
+                                          <p className="text-xs text-slate-600 mt-1 leading-snug">
+                                            {need.title}
+                                          </p>
                                         </div>
-                                        <p className="text-xs text-slate-600 mt-1 leading-snug">
-                                          {need.title}
-                                        </p>
                                       </div>
 
                                       <div className="text-right shrink-0">
@@ -963,30 +1288,49 @@ export default function ApcTab({
                                   <Layers className="w-3.5 h-3.5" />
                                   Curriculum à approfondir
                                 </p>
-                                {plan.curriculumSuggestions.slice(0, 2).map(({ item, score }) => (
-                                  <button
-                                    type="button"
-                                    key={item.id}
-                                    onClick={() =>
-                                      setStudentAssignment(plan.student.id, {
-                                        competenceId: null,
-                                        chapterCode: item.code,
-                                        chapterTitle: item.title,
-                                        domain: item.domain,
-                                        subDomain: item.subDomain || '',
-                                        focusType: 'curriculum'
-                                      })
-                                    }
-                                    className="w-full text-left flex items-center justify-between gap-2 text-xs bg-violet-50/50 hover:bg-violet-100/60 border border-violet-100 rounded-md px-2.5 py-1.5 transition"
-                                  >
-                                    <span className="text-slate-700 truncate">
-                                      <strong className="text-violet-800">{item.code}</strong> — {item.title}
-                                    </span>
-                                    <span className="text-[11px] font-bold text-violet-700 shrink-0">
-                                      {score}/3 pts
-                                    </span>
-                                  </button>
-                                ))}
+                                {plan.curriculumSuggestions.slice(0, 2).map(({ item, score }) => {
+                                  const isCurrSelected = chosen?.focusType === 'curriculum' && chosen?.chapterCode === item.code;
+                                  return (
+                                    <button
+                                      type="button"
+                                      key={item.id}
+                                      onClick={() => {
+                                        if (isCurrSelected) {
+                                          removeStudentAssignment(plan.student.id);
+                                        } else {
+                                          setStudentAssignment(plan.student.id, {
+                                            competenceId: null,
+                                            chapterCode: item.code,
+                                            chapterTitle: item.title,
+                                            domain: item.domain,
+                                            subDomain: item.subDomain || '',
+                                            focusType: 'curriculum'
+                                          });
+                                        }
+                                      }}
+                                      className={cn(
+                                        'w-full text-left flex items-center justify-between gap-2 text-xs border rounded-md px-2.5 py-1.5 transition',
+                                        isCurrSelected
+                                          ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
+                                          : 'bg-violet-50/50 hover:bg-violet-100/60 border-violet-100'
+                                      )}
+                                    >
+                                      <span className="flex items-center gap-1.5 text-slate-700 truncate">
+                                        {isCurrSelected ? (
+                                          <CheckSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                        ) : (
+                                          <Square className="w-3.5 h-3.5 text-violet-400 shrink-0" />
+                                        )}
+                                        <span className="truncate">
+                                          <strong className="text-violet-800">{item.code}</strong> — {item.title}
+                                        </span>
+                                      </span>
+                                      <span className="text-[11px] font-bold text-violet-700 shrink-0">
+                                        {score}/3 pts
+                                      </span>
+                                    </button>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -1005,8 +1349,7 @@ export default function ApcTab({
                       ) : (
                         report.workshopByTheme.map((theme, idx) => {
                           const assignedCount = theme.impactedStudents.filter(item => {
-                            const plan = report.studentPlans.find(p => p.student.id === item.student.id);
-                            const chosen = draftAssignments[item.student.id] || (plan ? getDefaultAssignmentForPlan(plan) : null);
+                            const chosen = draftAssignments[item.student.id];
                             if (!chosen) return false;
                             return (
                               (chosen.domain === theme.domain && chosen.subDomain === theme.subDomain) ||
@@ -1014,13 +1357,14 @@ export default function ApcTab({
                             );
                           }).length;
                           const allAssigned = theme.impactedStudents.length > 0 && assignedCount === theme.impactedStudents.length;
+                          const themeModality = workshopModalities[theme.key] || 'individuel';
 
                           return (
                             <div
                               key={theme.key}
                               className={cn(
                                 'bg-white rounded-xl border shadow-sm p-4 space-y-3 transition',
-                                allAssigned ? 'border-emerald-300 ring-1 ring-emerald-200' : 'border-slate-200'
+                                allAssigned ? 'border-emerald-400 ring-1 ring-emerald-200' : 'border-slate-200'
                               )}
                             >
                               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1040,13 +1384,60 @@ export default function ApcTab({
                                   <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
                                     {theme.totalImpacted} / {selectedStudents.length} concerné(s)
                                   </span>
+                                  <div className="flex items-center bg-slate-100 rounded-md border border-slate-200 p-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setWorkshopModalities(prev => ({ ...prev, [theme.key]: 'individuel' }));
+                                        if (assignedCount > 0) {
+                                          theme.impactedStudents.forEach(item => {
+                                            if (draftAssignments[item.student.id]) {
+                                              setStudentModality(item.student.id, 'individuel');
+                                            }
+                                          });
+                                        }
+                                      }}
+                                      className={cn(
+                                        'px-2 py-0.5 rounded text-[11px] font-bold transition',
+                                        themeModality === 'individuel'
+                                          ? 'bg-indigo-600 text-white'
+                                          : 'text-slate-600 hover:text-slate-900'
+                                      )}
+                                    >
+                                      Individuel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setWorkshopModalities(prev => ({ ...prev, [theme.key]: 'autonomie' }));
+                                        if (assignedCount > 0) {
+                                          theme.impactedStudents.forEach(item => {
+                                            if (draftAssignments[item.student.id]) {
+                                              setStudentModality(item.student.id, 'autonomie');
+                                            }
+                                          });
+                                        }
+                                      }}
+                                      className={cn(
+                                        'px-2 py-0.5 rounded text-[11px] font-bold transition',
+                                        themeModality === 'autonomie'
+                                          ? 'bg-emerald-600 text-white'
+                                          : 'text-slate-600 hover:text-slate-900'
+                                      )}
+                                    >
+                                      Autonomie
+                                    </button>
+                                  </div>
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      applyWorkshopThemeToSelected(
+                                      toggleWorkshopThemeForSelected(
+                                        theme.key,
                                         theme.domain,
                                         theme.subDomain,
-                                        theme.impactedStudents
+                                        theme.impactedStudents,
+                                        allAssigned,
+                                        themeModality
                                       )
                                     }
                                     className={cn(
@@ -1055,25 +1446,20 @@ export default function ApcTab({
                                         ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
                                         : assignedCount > 0
                                           ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                                          : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                                          : 'bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-300'
                                     )}
                                   >
-                                    {allAssigned && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                    {allAssigned ? (
+                                      <CheckSquare className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Square className="w-3.5 h-3.5" />
+                                    )}
                                     {allAssigned
-                                      ? `Retenu (${assignedCount} él.)`
+                                      ? `Atelier coché (${assignedCount} él.)`
                                       : assignedCount > 0
-                                        ? `Retenir pour tous (${assignedCount}/${theme.impactedStudents.length})`
-                                        : 'Retenir pour la séance'}
+                                        ? `Cocher tout (${assignedCount}/${theme.impactedStudents.length})`
+                                        : 'Cocher cet atelier (séance & TNI)'}
                                   </button>
-                                  {assignedCount > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setViewMode('individual')}
-                                      className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 bg-white hover:bg-indigo-50 border border-indigo-200 px-2 py-1 rounded-md transition"
-                                    >
-                                      Voir le plan
-                                    </button>
-                                  )}
                                 </div>
                               </div>
 
@@ -1118,19 +1504,21 @@ export default function ApcTab({
                       ) : (
                         report.workshopByCompetence.slice(0, 15).map((item, idx) => {
                           const targetGradeStudents = selectedStudents.filter(s => s.grade === item.grade);
+                          const targetStudentIds = targetGradeStudents.map(s => s.id);
                           const assignedCount = targetGradeStudents.filter(s => {
-                            const plan = report.studentPlans.find(p => p.student.id === s.id);
-                            const chosen = draftAssignments[s.id] || (plan ? getDefaultAssignmentForPlan(plan) : null);
+                            const chosen = draftAssignments[s.id];
                             return chosen?.competenceId === item.competence.id || chosen?.chapterCode === item.code;
                           }).length;
                           const allAssigned = targetGradeStudents.length > 0 && assignedCount === targetGradeStudents.length;
+                          const compKey = `comp_${item.competence.id}`;
+                          const compModality = workshopModalities[compKey] || 'individuel';
 
                           return (
                             <div
                               key={item.competence.id}
                               className={cn(
                                 'bg-white rounded-xl border shadow-sm p-4 space-y-3 transition',
-                                allAssigned ? 'border-emerald-300 ring-1 ring-emerald-200' : 'border-slate-200'
+                                allAssigned ? 'border-emerald-400 ring-1 ring-emerald-200' : 'border-slate-200'
                               )}
                             >
                               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1155,34 +1543,77 @@ export default function ApcTab({
                                   <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded border border-slate-200">
                                     {item.needCount} à accompagner • moy. {item.cohortAvg.toFixed(1)}/5
                                   </span>
+                                  <div className="flex items-center bg-slate-100 rounded-md border border-slate-200 p-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setWorkshopModalities(prev => ({ ...prev, [compKey]: 'individuel' }));
+                                        if (assignedCount > 0) {
+                                          targetStudentIds.forEach(id => {
+                                            if (draftAssignments[id]) setStudentModality(id, 'individuel');
+                                          });
+                                        }
+                                      }}
+                                      className={cn(
+                                        'px-2 py-0.5 rounded text-[11px] font-bold transition',
+                                        compModality === 'individuel'
+                                          ? 'bg-indigo-600 text-white'
+                                          : 'text-slate-600 hover:text-slate-900'
+                                      )}
+                                    >
+                                      Individuel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setWorkshopModalities(prev => ({ ...prev, [compKey]: 'autonomie' }));
+                                        if (assignedCount > 0) {
+                                          targetStudentIds.forEach(id => {
+                                            if (draftAssignments[id]) setStudentModality(id, 'autonomie');
+                                          });
+                                        }
+                                      }}
+                                      className={cn(
+                                        'px-2 py-0.5 rounded text-[11px] font-bold transition',
+                                        compModality === 'autonomie'
+                                          ? 'bg-emerald-600 text-white'
+                                          : 'text-slate-600 hover:text-slate-900'
+                                      )}
+                                    >
+                                      Autonomie
+                                    </button>
+                                  </div>
                                   <button
                                     type="button"
-                                    onClick={() => applyWorkshopCompetenceToGroup(item.competence)}
+                                    onClick={() => {
+                                      setWorkshopModalities(prev => ({ ...prev, [compKey]: compModality }));
+                                      toggleWorkshopCompetenceForGroup(
+                                        item.competence,
+                                        targetStudentIds,
+                                        allAssigned,
+                                        compModality
+                                      );
+                                    }}
                                     className={cn(
                                       'text-xs font-bold px-2.5 py-1 rounded-md border transition inline-flex items-center gap-1.5',
                                       allAssigned
                                         ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
                                         : assignedCount > 0
                                           ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                                          : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                                          : 'bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-300'
                                     )}
                                   >
-                                    {allAssigned && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                    {allAssigned ? (
+                                      <CheckSquare className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Square className="w-3.5 h-3.5" />
+                                    )}
                                     {allAssigned
-                                      ? `Retenu (${assignedCount} él.)`
+                                      ? `Atelier coché (${assignedCount} él.)`
                                       : assignedCount > 0
-                                        ? `Retenir (${assignedCount}/${targetGradeStudents.length})`
-                                        : 'Retenir pour la séance'}
+                                        ? `Cocher tout (${assignedCount}/${targetGradeStudents.length})`
+                                        : 'Cocher cet atelier (séance & TNI)'}
                                   </button>
-                                  {assignedCount > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setViewMode('individual')}
-                                      className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 bg-white hover:bg-indigo-50 border border-indigo-200 px-2 py-1 rounded-md transition"
-                                    >
-                                      Voir le plan
-                                    </button>
-                                  )}
                                 </div>
                               </div>
 
@@ -1390,6 +1821,18 @@ export default function ApcTab({
                                   {entry.chapter_title && entry.chapter_title !== entry.chapter_code
                                     ? ` — ${entry.chapter_title}`
                                     : ''}
+                                  {entry.modality && (
+                                    <span
+                                      className={cn(
+                                        'ml-1.5 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded',
+                                        entry.modality === 'autonomie'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : 'bg-indigo-100 text-indigo-800'
+                                      )}
+                                    >
+                                      {entry.modality === 'autonomie' ? 'Autonomie' : 'Individuel'}
+                                    </span>
+                                  )}
                                 </p>
                               </div>
 
@@ -1431,6 +1874,16 @@ export default function ApcTab({
         uniqueGrades={uniqueGrades}
         initialStartDate={historyStartDate || undefined}
         initialEndDate={historyEndDate || undefined}
+      />
+
+      <ApcTniModal
+        isOpen={isTniModalOpen}
+        onClose={() => setIsTniModalOpen(false)}
+        items={tniItems}
+        sessionDate={sessionDate}
+        domainFilter={domainFilter}
+        gradeFilter={gradeFilter}
+        sessionNotes={sessionNotes}
       />
     </div>
   );

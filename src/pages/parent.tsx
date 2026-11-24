@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ComposedChart, LineChart, Line, Bar, BarChart, Cell, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { BookOpen, User, CheckCircle, ChevronDown, Printer, Activity, Target, TrendingUp, Book, Layers, Award } from 'lucide-react';
-import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult } from '../types';
-import { getDomain as getCompDomain, getGrade as getCompGrade, scaleScore, createDomainSorter } from '../utils/helpers';
+import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ParentPriorityEntry } from '../types';
+import { getCode, getDomain as getCompDomain, getGrade as getCompGrade, scaleScore, createDomainSorter } from '../utils/helpers';
 import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
+import { cleanChapterTitle, computeChapterMasteryPct } from '../utils/parentPriorities';
 
 export default function ParentPage() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -13,6 +14,7 @@ export default function ParentPage() {
   const [fluenceReferences, setFluenceReferences] = useState<FluenceReference[]>([]);
   const [curriculumItems, setCurriculumItems] = useState<CurriculumItem[]>([]);
   const [curriculumResults, setCurriculumResults] = useState<CurriculumResult[]>([]);
+  const [parentPriorities, setParentPriorities] = useState<ParentPriorityEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [studentId, setStudentId] = useState<string>('');
   const [observation, setObservation] = useState('');
@@ -37,6 +39,7 @@ export default function ParentPage() {
          setFluenceReferences(data.fluenceReferences || []);
          setCurriculumItems(data.curriculumItems || []);
          setCurriculumResults(data.curriculumResults || []);
+         setParentPriorities(data.parentPriorities || []);
       }
     } catch (e) {
       console.error('Erreur chargement données:', e);
@@ -73,6 +76,32 @@ export default function ParentPage() {
     () => getEvaluatedCompetenceMap(activeStudents, competences, results),
     [activeStudents, competences, results]
   );
+
+  const studentPriorityCards = useMemo(() => {
+    if (!student) return [];
+    const compMap = new Map(competences.map(c => [c.id, c]));
+    return parentPriorities
+      .filter(p => p.student_id === student.id)
+      .map(p => {
+        const comp = compMap.get(Number(p.competence_id));
+        if (!comp) return null;
+        const res = results[student.id]?.[comp.id];
+        const hasScore = Boolean(res && res.isStarted && res.score !== null && res.score !== undefined);
+        const score = hasScore ? Number(res!.score) : null;
+        const pct = score !== null ? computeChapterMasteryPct(score) : null;
+        return {
+          id: p.id,
+          code: getCode(comp),
+          title: cleanChapterTitle(comp.title),
+          domain: getDomain(comp) || 'Apprentissages',
+          subDomain: (comp.subDomain || '').trim(),
+          score,
+          pct,
+          isValidated: score !== null && score >= 5
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  }, [student, parentPriorities, competences, results, getDomain]);
 
   const portailDomainData = useMemo(() => {
      if (!student) return [];
@@ -485,6 +514,94 @@ export default function ParentPage() {
                </div>
             )}
          </div>
+
+         {/* Cartouche "Je travaille en priorité..." sélectionné par l'enseignant */}
+         {studentPriorityCards.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-emerald-200 p-6 sm:p-8 print-break-inside-avoid">
+               <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <Target className="w-5 h-5 text-emerald-600" />
+                        Je travaille en priorité...
+                     </h2>
+                     <p className="text-sm text-slate-500 mt-0.5">
+                        Chapitres ciblés avec l&apos;enseignante et avancement vers l&apos;objectif de validation.
+                     </p>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg self-start sm:self-auto">
+                     {studentPriorityCards.length} objectif{studentPriorityCards.length > 1 ? 's' : ''}
+                  </span>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {studentPriorityCards.map(item => {
+                     const pctValue = item.pct ?? 0;
+                     const barColor = item.isValidated
+                        ? 'bg-emerald-700'
+                        : pctValue >= 60
+                           ? 'bg-emerald-500'
+                           : 'bg-emerald-300';
+
+                     return (
+                        <div
+                           key={item.id}
+                           className="bg-emerald-50/40 border border-emerald-200/80 rounded-xl p-4 space-y-2.5"
+                        >
+                           <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                 <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                                    <span className="text-[11px] font-bold text-emerald-800 bg-white border border-emerald-200 px-2 py-0.5 rounded">
+                                       {item.subDomain || item.domain}
+                                    </span>
+                                    <span className="text-[11px] font-mono font-bold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                                       {item.code}
+                                    </span>
+                                 </div>
+                                 <p className="text-sm font-bold text-slate-800 leading-snug">
+                                    {item.title}
+                                 </p>
+                              </div>
+
+                              {item.pct !== null ? (
+                                 <span
+                                    className={`text-xs font-extrabold px-2.5 py-1 rounded-lg shrink-0 border ${
+                                       item.isValidated
+                                          ? 'bg-emerald-700 text-white border-emerald-800'
+                                          : 'bg-white text-emerald-800 border-emerald-200'
+                                    }`}
+                                 >
+                                    {item.isValidated ? '100 % ✓ Validé' : `${item.pct} %`}
+                                 </span>
+                              ) : (
+                                 <span className="text-[11px] font-semibold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded shrink-0">
+                                    En cours
+                                 </span>
+                              )}
+                           </div>
+
+                           {item.pct !== null && (
+                              <div className="space-y-1">
+                                 <div className="w-full bg-slate-200/80 rounded-full h-3 overflow-hidden shadow-inner">
+                                    <div
+                                       className={`${barColor} h-full transition-all duration-500 ease-out rounded-full`}
+                                       style={{ width: `${Math.max(pctValue, 4)}%` }}
+                                    />
+                                 </div>
+                                 <p className="text-[11px] font-medium text-slate-600 text-right">
+                                    {item.isValidated
+                                       ? 'Objectif de maîtrise atteint !'
+                                       : item.pct >= 80
+                                          ? 'Presque validé — dernière étape'
+                                          : `${item.pct} % vers la validation`}
+                                 </p>
+                              </div>
+                           )}
+                        </div>
+                     );
+                  })}
+               </div>
+            </div>
+         )}
 
          {/* BLOC PROFIL & PROGRESSION EN FLUENCE */}
          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">

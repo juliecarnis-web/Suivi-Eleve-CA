@@ -63,6 +63,7 @@ export type CurriculumResult = {
 };
 
 export type ApcFocusType = 'competence' | 'theme' | 'fluence' | 'curriculum' | 'custom';
+export type ApcModality = 'individuel' | 'autonomie';
 
 export type ApcEntry = {
   id: string;
@@ -75,7 +76,15 @@ export type ApcEntry = {
   domain: string;
   sub_domain: string;
   focus_type: ApcFocusType;
+  modality?: ApcModality;
   notes?: string;
   created_at?: string;
+};
+
+export type ParentPriorityEntry = {
+  id: string;
+  student_id: string;
+  competence_id: number;
+  updated_at?: string;
 };
 

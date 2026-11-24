@@ -3,7 +3,7 @@ import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Toolti
 import { Activity, Layers, BarChart2, User } from 'lucide-react';
 import { cn, getCode, getGrade, getDomain, createDomainSorter, scaleScore } from '../utils/helpers';
 import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
-import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult } from '../types';
+import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ParentPriorityEntry } from '../types';
 import PortailIndividuel from './PortailIndividuel';
 import FluenceCharts from './fluence/FluenceCharts';
 import CurriculumCharts from './curriculum/CurriculumCharts';
@@ -20,6 +20,8 @@ interface PilotageTabProps {
   fluenceReferences?: FluenceReference[];
   curriculumItems?: CurriculumItem[];
   curriculumResults?: CurriculumResult[];
+  parentPriorities?: ParentPriorityEntry[];
+  saveParentPriorities?: (studentId: string, competenceIds: number[]) => Promise<void>;
 }
 
 export default function PilotageTab({
@@ -33,7 +35,9 @@ export default function PilotageTab({
   fluenceScores = [],
   fluenceReferences = [],
   curriculumItems = [],
-  curriculumResults = []
+  curriculumResults = [],
+  parentPriorities = [],
+  saveParentPriorities = async () => {}
 }: PilotageTabProps) {
   const [pilotFilterGrade, setPilotFilterGrade] = useState<string>('all');
   const [pilotFilterDomain, setPilotFilterDomain] = useState<string>('all');
@@ -619,6 +623,8 @@ export default function PilotageTab({
                 fluenceReferences={fluenceReferences}
                 curriculumItems={curriculumItems}
                 curriculumResults={curriculumResults}
+                parentPriorities={parentPriorities}
+                saveParentPriorities={saveParentPriorities}
               />
             </div>
 

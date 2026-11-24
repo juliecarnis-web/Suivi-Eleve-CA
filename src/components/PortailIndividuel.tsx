@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { BookOpen, Activity, Layers, CheckCircle2, TrendingUp, Award, Search, User } from 'lucide-react';
 import { ResponsiveContainer, ComposedChart, LineChart, BarChart, Bar, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ReferenceLine, Line } from 'recharts';
-import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult } from '../types';
+import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ParentPriorityEntry } from '../types';
 import { getGrade, getDomain, scaleScore, createDomainSorter } from '../utils/helpers';
 import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
 import BilanGeneratorPanel from './BilanGeneratorPanel';
+import ParentPrioritySelectorPanel from './ParentPrioritySelectorPanel';
 
 interface PortailIndividuelProps {
   activeStudents: Student[];
@@ -18,6 +19,8 @@ interface PortailIndividuelProps {
   fluenceReferences?: FluenceReference[];
   curriculumItems?: CurriculumItem[];
   curriculumResults?: CurriculumResult[];
+  parentPriorities?: ParentPriorityEntry[];
+  saveParentPriorities?: (studentId: string, competenceIds: number[]) => Promise<void>;
 }
 
 export default function PortailIndividuel({
@@ -31,7 +34,9 @@ export default function PortailIndividuel({
   fluenceScores = [],
   fluenceReferences = [],
   curriculumItems = [],
-  curriculumResults = []
+  curriculumResults = [],
+  parentPriorities = [],
+  saveParentPriorities = async () => {}
 }: PortailIndividuelProps) {
   const [portailGrade, setPortailGrade] = useState<string>('all');
   const [portailStudentId, setPortailStudentId] = useState<string>('');
@@ -472,6 +477,17 @@ export default function PortailIndividuel({
           </div>
         </div>
       </div>
+
+      {/* 1 ter. Sélection pondérée pour le cartouche "Je travaille en priorité..." du Portail Parents */}
+      <ParentPrioritySelectorPanel
+        currentStudent={currentStudent}
+        activeStudents={activeStudents}
+        competences={competences}
+        results={results}
+        evaluatedCompMap={evaluatedCompMap}
+        savedPriorities={parentPriorities}
+        onSavePriorities={saveParentPriorities}
+      />
 
       {/* 1 bis. Assistant de Bilan Pré-rédigé (Sans IA) */}
       <BilanGeneratorPanel

@@ -171,9 +171,22 @@ async function ensureTables(sql: ReturnType<typeof neon>) {
         "domain" text,
         "sub_domain" text,
         "focus_type" text DEFAULT 'competence' NOT NULL,
+        "modality" text DEFAULT 'individuel' NOT NULL,
         "notes" text,
         "teacher_id" varchar(100) DEFAULT 'JulieCB' NOT NULL,
         "created_at" timestamp with time zone DEFAULT now()
+      );
+    `;
+    await sql`ALTER TABLE "APC" ADD COLUMN IF NOT EXISTS "modality" text DEFAULT 'individuel'`;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS "ParentPriority" (
+        "id" text PRIMARY KEY,
+        "student_id" text NOT NULL,
+        "competence_id" integer NOT NULL,
+        "teacher_id" varchar(100) DEFAULT 'JulieCB' NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now(),
+        CONSTRAINT "unique_parent_priority" UNIQUE("student_id", "competence_id")
       );
     `;
 
@@ -288,6 +301,7 @@ export default async function handler(req: any, res: any) {
             "domain",
             "sub_domain",
             "focus_type",
+            COALESCE("modality", 'individuel') as "modality",
             "notes",
             "created_at"
           FROM "APC"
@@ -296,10 +310,27 @@ export default async function handler(req: any, res: any) {
         `;
         apcEntries = rawApc.map((r: any) => ({
           ...r,
-          competence_id: r.competence_id !== null && r.competence_id !== undefined ? Number(r.competence_id) : null
+          competence_id: r.competence_id !== null && r.competence_id !== undefined ? Number(r.competence_id) : null,
+          modality: r.modality === 'autonomie' ? 'autonomie' : 'individuel'
         }));
       } catch (e) {
         console.warn("Table APC non lisible:", e);
+      }
+
+      let parentPriorities: any[] = [];
+      try {
+        const rawPriorities = await sql`
+          SELECT "id", "student_id", "competence_id", "updated_at"
+          FROM "ParentPriority"
+          WHERE "teacher_id" = 'JulieCB'
+          ORDER BY "updated_at" DESC
+        `;
+        parentPriorities = rawPriorities.map((r: any) => ({
+          ...r,
+          competence_id: Number(r.competence_id)
+        }));
+      } catch (e) {
+        console.warn("Table ParentPriority non lisible:", e);
       }
 
       return res.status(200).json({
@@ -312,7 +343,8 @@ export default async function handler(req: any, res: any) {
         fluenceReferences,
         curriculumItems,
         curriculumResults,
-        apcEntries
+        apcEntries,
+        parentPriorities
       });
     } catch (error: any) {
       console.error("Erreur globale lors de la lecture des données:", error);
@@ -335,6 +367,7 @@ export default async function handler(req: any, res: any) {
         if (body.table === 'CurriculumItem') await sql`DELETE FROM "CurriculumItem" WHERE "teacher_id" = 'JulieCB'`;
         if (body.table === 'CurriculumResult') await sql`DELETE FROM "CurriculumResult" WHERE "teacher_id" = 'JulieCB'`;
         if (body.table === 'APC') await sql`DELETE FROM "APC" WHERE "teacher_id" = 'JulieCB'`;
+        if (body.table === 'ParentPriority') await sql`DELETE FROM "ParentPriority" WHERE "teacher_id" = 'JulieCB'`;
         return res.status(200).json({ success: true });
       }
 
@@ -676,6 +709,7 @@ export default async function handler(req: any, res: any) {
           const domain = typeof item.domain === 'string' ? item.domain.trim().slice(0, 200) : '';
           const subDomain = typeof item.subDomain === 'string' ? item.subDomain.trim().slice(0, 200) : '';
           const focusType = allowedFocus.has(item.focusType) ? item.focusType : 'competence';
+          const modality = item.modality === 'autonomie' ? 'autonomie' : 'individuel';
           const entryNotes =
             typeof item.notes === 'string' && item.notes.trim()
               ? item.notes.trim().slice(0, 1000)
@@ -689,12 +723,12 @@ export default async function handler(req: any, res: any) {
             INSERT INTO "APC" (
               "id", "session_id", "session_date", "student_id", "competence_id",
               "chapter_code", "chapter_title", "domain", "sub_domain",
-              "focus_type", "notes", "teacher_id", "created_at"
+              "focus_type", "modality", "notes", "teacher_id", "created_at"
             )
             VALUES (
               ${entryId}, ${sessionId}, ${sessionDate}::date, ${studentId}, ${competenceId},
               ${chapterCode}, ${chapterTitle}, ${domain}, ${subDomain},
-              ${focusType}, ${entryNotes}, 'JulieCB', NOW()
+              ${focusType}, ${modality}, ${entryNotes}, 'JulieCB', NOW()
             )
           `;
 
@@ -709,6 +743,7 @@ export default async function handler(req: any, res: any) {
             domain,
             sub_domain: subDomain,
             focus_type: focusType,
+            modality,
             notes: entryNotes
           });
         }
@@ -732,6 +767,43 @@ export default async function handler(req: any, res: any) {
         }
         await sql`DELETE FROM "APC" WHERE "id" = ${entryId} AND "teacher_id" = 'JulieCB'`;
         return res.status(200).json({ success: true });
+      }
+
+      if (body.type === 'parent_priority_save') {
+        const studentId = typeof body.studentId === 'string' ? body.studentId.trim().slice(0, 120) : '';
+        if (!studentId) {
+          return res.status(400).json({ error: 'Identifiant élève manquant.' });
+        }
+
+        const rawIds = Array.isArray(body.competenceIds) ? body.competenceIds : [];
+        const competenceIds: number[] = Array.from(
+          new Set(
+            rawIds
+              .map((id: any) => parseInt(id, 10))
+              .filter((id: number) => Number.isInteger(id) && id > 0)
+          )
+        ).slice(0, 50) as number[];
+
+        await sql`
+          DELETE FROM "ParentPriority"
+          WHERE "student_id" = ${studentId} AND "teacher_id" = 'JulieCB'
+        `;
+
+        const savedEntries: any[] = [];
+        for (const compId of competenceIds) {
+          const entryId = `pp_${studentId}_${compId}`;
+          await sql`
+            INSERT INTO "ParentPriority" ("id", "student_id", "competence_id", "teacher_id", "updated_at")
+            VALUES (${entryId}, ${studentId}, ${compId}, 'JulieCB', NOW())
+          `;
+          savedEntries.push({
+            id: entryId,
+            student_id: studentId,
+            competence_id: compId
+          });
+        }
+
+        return res.status(200).json({ success: true, studentId, entries: savedEntries });
       }
 
     } catch (error: any) {

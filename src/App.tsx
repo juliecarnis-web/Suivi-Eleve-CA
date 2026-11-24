@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { BookOpen, BarChart2, Settings, Lock, Loader2, X, ShieldAlert, Activity, Layers, Sparkles } from 'lucide-react';
+import { BookOpen, BarChart2, Settings, Lock, Loader2, X, ShieldAlert, Activity, Layers, Sparkles, Compass } from 'lucide-react';
 import { cn } from './utils/helpers';
-import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ApcEntry } from './types';
+import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ApcEntry, ParentPriorityEntry } from './types';
 
 import SaisieTab from './components/SaisieTab';
 import PilotageTab from './components/PilotageTab';
@@ -9,6 +9,7 @@ import AdminTab from './components/AdminTab';
 import FluenceTab from './components/fluence/FluenceTab';
 import CurriculumTab from './components/curriculum/CurriculumTab';
 import ApcTab, { ApcAssignmentDraft } from './components/ApcTab';
+import AutonomieTab from './components/AutonomieTab';
 import ParentPage from './pages/parent';
 
 export default function App() {
@@ -38,8 +39,9 @@ export default function App() {
   const [curriculumItems, setCurriculumItems] = useState<CurriculumItem[]>([]);
   const [curriculumResults, setCurriculumResults] = useState<CurriculumResult[]>([]);
   const [apcEntries, setApcEntries] = useState<ApcEntry[]>([]);
+  const [parentPriorities, setParentPriorities] = useState<ParentPriorityEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage' | 'curriculum' | 'fluence' | 'apc' | 'admin'>('saisie');
+  const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage' | 'curriculum' | 'fluence' | 'autonomie' | 'apc' | 'admin'>('saisie');
 
   const fetchData = useCallback(async () => {
     try {
@@ -57,6 +59,7 @@ export default function App() {
           setCurriculumItems(data.curriculumItems || []);
           setCurriculumResults(data.curriculumResults || []);
           setApcEntries(data.apcEntries || []);
+          setParentPriorities(data.parentPriorities || []);
         } else {
           console.warn('API non disponible (HTML reçu), format vide en attendant.');
         }
@@ -298,6 +301,27 @@ export default function App() {
       throw new Error(data.error || 'Échec de la suppression de la séance APC.');
     }
     setApcEntries(prev => prev.filter(e => e.session_id !== sessionId));
+  }, []);
+
+  const handleSaveParentPriorities = useCallback(async (studentId: string, competenceIds: number[]) => {
+    const res = await fetch('/api/upsert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'parent_priority_save',
+        studentId,
+        competenceIds
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Échec de la sauvegarde des priorités parents.');
+    }
+    const saved: ParentPriorityEntry[] = Array.isArray(data.entries) ? data.entries : [];
+    setParentPriorities(prev => [
+      ...saved,
+      ...prev.filter(p => p.student_id !== studentId)
+    ]);
   }, []);
 
   const upsertResult = useCallback(async (
@@ -587,28 +611,31 @@ export default function App() {
   return (
     <div translate="no" className="flex flex-col h-screen bg-slate-50 font-sans text-slate-900">
       <header className="bg-indigo-700 text-white shadow-md z-50 shrink-0">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 px-6 py-3">
+          <div className="flex items-center gap-3 shrink-0">
             <BookOpen className="w-6 h-6 text-indigo-200" />
-            <h1 className="text-xl font-bold tracking-tight">Suivi Elèves - Julie Carnis-Bréart</h1>
+            <h1 className="text-lg xl:text-xl font-bold tracking-tight whitespace-nowrap">Suivi Elèves - Julie Carnis-Bréart</h1>
           </div>
-          <div className="flex gap-1 overflow-x-auto">
-            <button onClick={() => setActiveTab('saisie')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'saisie' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+          <div className="flex items-center gap-1 overflow-x-auto">
+            <button onClick={() => setActiveTab('saisie')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'saisie' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <BookOpen className="w-4 h-4" /> Saisie des réussites
             </button>
-            <button onClick={() => setActiveTab('curriculum')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'curriculum' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+            <button onClick={() => setActiveTab('curriculum')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'curriculum' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <Layers className="w-4 h-4" /> Curriculum
             </button>
-            <button onClick={() => setActiveTab('fluence')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'fluence' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+            <button onClick={() => setActiveTab('fluence')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'fluence' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <Activity className="w-4 h-4" /> Fluence
             </button>
-            <button onClick={() => setActiveTab('pilotage')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'pilotage' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+            <button onClick={() => setActiveTab('pilotage')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'pilotage' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <BarChart2 className="w-4 h-4" /> Pilotage
             </button>
-            <button onClick={() => setActiveTab('apc')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'apc' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+            <button onClick={() => setActiveTab('autonomie')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'autonomie' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+              <Compass className="w-4 h-4" /> Autonomie
+            </button>
+            <button onClick={() => setActiveTab('apc')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'apc' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <Sparkles className="w-4 h-4" /> APC
             </button>
-            <button onClick={() => setActiveTab('admin')} className={cn("px-4 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-2", activeTab === 'admin' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+            <button onClick={() => setActiveTab('admin')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'admin' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <Settings className="w-4 h-4" /> Admin
             </button>
           </div>
@@ -642,6 +669,22 @@ export default function App() {
           fluenceReferences={fluenceReferences}
           curriculumItems={curriculumItems}
           curriculumResults={curriculumResults}
+          parentPriorities={parentPriorities}
+          saveParentPriorities={handleSaveParentPriorities}
+        />
+      )}
+
+      {activeTab === 'autonomie' && (
+        <AutonomieTab
+          activeStudents={activeStudents}
+          competences={competences}
+          results={results}
+          uniqueGrades={uniqueGrades}
+          curriculumItems={curriculumItems}
+          curriculumResults={curriculumResults}
+          isEditMode={isEditMode}
+          handleToggleEditMode={handleToggleEditMode}
+          upsertResult={upsertResult}
         />
       )}
 

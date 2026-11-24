@@ -55,20 +55,31 @@ export default function AdminTab({ students, competences, fetchData }: AdminTabP
     checkDbConnection();
   }, []);
 
-  const handleClearTable = async (tableName: string) => {
-    const messages: Record<string, string> = {
-      'Student': 'Vider la table des élèves supprimera tous les élèves. Continuer ?',
-      'Competence': 'Vider la progression supprimera toutes les compétences. Continuer ?',
-      'Result': '⚠️ Vider la table des notes supprimera tous les résultats. Continuer ?',
-      'Observations': 'Vider la table des observations supprimera toutes les observations. Continuer ?'
-    };
-    
-    if (!window.confirm(messages[tableName] || `⚠️ Voulez-vous vraiment vider la table ${tableName} ?`)) return;
-    
-    if (tableName === 'Result') {
-       if (!window.confirm("Êtes-vous absolument sûr ? Cette action est JURIDIQUEMENT irréversible (plus de notes).")) return;
+  const [pendingClearTable, setPendingClearTable] = useState<string | null>(null);
+  const [confirmFinalResult, setConfirmFinalResult] = useState<boolean>(false);
+  const [isClearing, setIsClearing] = useState<boolean>(false);
+
+  const clearMessages: Record<string, string> = {
+    Student: 'Vider la table des élèves supprimera tous les élèves.',
+    Competence: 'Vider la progression supprimera toutes les compétences.',
+    Result: 'Vider la table des notes supprimera tous les résultats.',
+    Observations: 'Vider la table des observations supprimera toutes les observations.',
+    APC: 'Vider la table APC supprimera tout l’historique des séances APC enregistrées.',
+    ParentPriority: 'Vider les recommandations parents supprimera les chapitres prioritaires affichés dans le portail famille.'
+  };
+
+  const requestClearTable = (tableName: string) => {
+    setPendingClearTable(tableName);
+    setConfirmFinalResult(false);
+  };
+
+  const executeClearTable = async (tableName: string) => {
+    if (tableName === 'Result' && !confirmFinalResult) {
+      setConfirmFinalResult(true);
+      return;
     }
 
+    setIsClearing(true);
     try {
       const res = await fetch('/api/upsert', {
         method: 'POST',
@@ -76,12 +87,26 @@ export default function AdminTab({ students, competences, fetchData }: AdminTabP
         body: JSON.stringify({ action: 'clear', table: tableName })
       });
       if (res.ok) {
-        setStatusMsg(`✅ Table ${tableName} vidée !`);
+        const labels: Record<string, string> = {
+          Student: 'Élèves',
+          Competence: 'Progression',
+          Result: 'Notes',
+          Observations: 'Observations',
+          APC: 'APC',
+          ParentPriority: 'Recommandations parents'
+        };
+        setStatusMsg(`✅ Table « ${labels[tableName] || tableName} » vidée !`);
+        setPendingClearTable(null);
+        setConfirmFinalResult(false);
         await fetchData();
+      } else {
+        setStatusMsg("❌ Erreur lors du vidage.");
       }
     } catch (err) {
       console.error(err);
       setStatusMsg("❌ Erreur lors du vidage.");
+    } finally {
+      setIsClearing(false);
     }
   };
 
@@ -314,18 +339,65 @@ export default function AdminTab({ students, competences, fetchData }: AdminTabP
                 <Trash2 className="w-5 h-5" /> Zone Danger (Remise à Zéro)
               </h2>
             </div>
-            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <button onClick={() => handleClearTable('Student')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
+
+            {pendingClearTable && (
+              <div className="mx-6 mt-5 p-4 rounded-xl bg-rose-50 border border-rose-300 flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-bold text-rose-900">
+                    {pendingClearTable === 'Result' && confirmFinalResult
+                      ? 'Confirmation finale : cette suppression de toutes les notes est irréversible.'
+                      : clearMessages[pendingClearTable] || `Voulez-vous vraiment vider la table ${pendingClearTable} ?`}
+                  </p>
+                  <p className="text-xs text-rose-700">
+                    Action définitive en base de données (idéale pour la remise à zéro de fin d’année).
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={isClearing}
+                    onClick={() => executeClearTable(pendingClearTable)}
+                    className="px-3.5 py-2 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white transition"
+                  >
+                    {isClearing
+                      ? 'Vidage...'
+                      : pendingClearTable === 'Result' && !confirmFinalResult
+                        ? 'Continuer (1/2)'
+                        : 'Confirmer le vidage'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isClearing}
+                    onClick={() => {
+                      setPendingClearTable(null);
+                      setConfirmFinalResult(false);
+                    }}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <button type="button" onClick={() => requestClearTable('Student')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
                 Vider Élèves
               </button>
-              <button onClick={() => handleClearTable('Competence')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
+              <button type="button" onClick={() => requestClearTable('Competence')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
                 Vider Progression
               </button>
-              <button onClick={() => handleClearTable('Result')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
+              <button type="button" onClick={() => requestClearTable('Result')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
                 Vider Notes
               </button>
-              <button onClick={() => handleClearTable('Observations')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
+              <button type="button" onClick={() => requestClearTable('Observations')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
                 Vider Observations
+              </button>
+              <button type="button" onClick={() => requestClearTable('APC')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
+                Vider APC
+              </button>
+              <button type="button" onClick={() => requestClearTable('ParentPriority')} className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-4 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center h-14 text-center">
+                Vider recommandations parents
               </button>
             </div>
         </div>
