@@ -16,7 +16,9 @@ import {
   Trash2,
   CheckCircle2,
   Clock,
-  Monitor
+  Monitor,
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 import {
   Student,
@@ -70,6 +72,7 @@ interface ApcTabProps {
     entries: Array<ApcAssignmentDraft & { studentId: string }>;
   }) => Promise<void>;
   onDeleteApcSession: (sessionId: string) => Promise<void>;
+  onToggleApcAuthorization: (studentId: string, apcAuthorized: boolean) => Promise<void>;
 }
 
 function getTodayIso(): string {
@@ -149,9 +152,13 @@ export default function ApcTab({
   isEditMode,
   handleToggleEditMode,
   onSaveApcSession,
-  onDeleteApcSession
+  onDeleteApcSession,
+  onToggleApcAuthorization
 }: ApcTabProps) {
   const [subTab, setSubTab] = useState<'prepare' | 'history'>('prepare');
+  const [studentListMode, setStudentListMode] = useState<'session' | 'authorizations'>('session');
+  const [togglingAuthId, setTogglingAuthId] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string>('');
   const [gradeFilter, setGradeFilter] = useState<string>('all');
   const [domainFilter, setDomainFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -189,14 +196,22 @@ export default function ApcTab({
 
   const visibleStudents = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    return activeStudents
+    const filtered = activeStudents
       .filter(s => gradeFilter === 'all' || s.grade === gradeFilter)
       .filter(s => {
         if (!q) return true;
         return `${s.firstName} ${s.lastName}`.toLowerCase().includes(q);
-      })
-      .sort((a, b) => a.lastName.localeCompare(b.lastName, 'fr') || a.firstName.localeCompare(b.firstName, 'fr'));
-  }, [activeStudents, gradeFilter, searchTerm]);
+      });
+
+    return [...filtered].sort((a, b) => {
+      if (studentListMode === 'session') {
+        const authA = a.apc_authorized ? 1 : 0;
+        const authB = b.apc_authorized ? 1 : 0;
+        if (authA !== authB) return authB - authA;
+      }
+      return a.lastName.localeCompare(b.lastName, 'fr') || a.firstName.localeCompare(b.firstName, 'fr');
+    });
+  }, [activeStudents, gradeFilter, searchTerm, studentListMode]);
 
   const studentQuickStats = useMemo(() => {
     const map = new Map<string, { urgent: number; consolidate: number }>();
@@ -251,7 +266,20 @@ export default function ApcTab({
     ]
   );
 
-  // Nettoyer les affectations si un élève est décoché de la liste des volontaires
+  // Nettoyer les affectations et sélections si un élève est décoché ou n'a plus l'autorisation parentale
+  useEffect(() => {
+    const authorizedSet = new Set(activeStudents.filter(s => Boolean(s.apc_authorized)).map(s => s.id));
+    setSelectedIds(prev => {
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach(id => {
+        if (authorizedSet.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [activeStudents]);
+
   useEffect(() => {
     setDraftAssignments(prev => {
       let changed = false;
@@ -461,19 +489,44 @@ export default function ApcTab({
     setTimeout(() => setSaveFeedback(''), 3000);
   };
 
-  const toggleStudent = (id: string) => {
+  const toggleStudent = (student: Student) => {
+    if (!student.apc_authorized) return;
     setSelectedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(student.id)) next.delete(student.id);
+      else next.add(student.id);
       return next;
     });
+  };
+
+  const handleToggleAuthorization = async (student: Student) => {
+    const nextAuth = !Boolean(student.apc_authorized);
+    setAuthError('');
+    setTogglingAuthId(student.id);
+    try {
+      await onToggleApcAuthorization(student.id, nextAuth);
+      if (!nextAuth) {
+        setSelectedIds(prev => {
+          if (!prev.has(student.id)) return prev;
+          const next = new Set(prev);
+          next.delete(student.id);
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error('Erreur mise à jour autorisation APC:', err);
+      setAuthError('Impossible de mettre à jour l’autorisation en base.');
+    } finally {
+      setTogglingAuthId(null);
+    }
   };
 
   const selectVisible = () => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      visibleStudents.forEach(s => next.add(s.id));
+      visibleStudents.forEach(s => {
+        if (s.apc_authorized) next.add(s.id);
+      });
       return next;
     });
   };
@@ -481,6 +534,11 @@ export default function ApcTab({
   const clearSelection = () => {
     setSelectedIds(new Set());
   };
+
+  const visibleAuthorizedCount = useMemo(
+    () => visibleStudents.filter(s => Boolean(s.apc_authorized)).length,
+    [visibleStudents]
+  );
 
   const retainedEntries = useMemo(() => {
     return report.studentPlans
@@ -642,34 +700,73 @@ export default function ApcTab({
       {subTab === 'prepare' && (
         <div className="flex-1 overflow-auto p-6">
           <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Colonne Gauche : Élèves volontaires */}
+            {/* Colonne Gauche : Accords parentaux & Élèves de la séance */}
             <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-              <div className="px-4 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-indigo-600" />
-                  <h2 className="text-sm font-bold text-slate-800">
-                    Élèves volontaires ({selectedStudents.length})
-                  </h2>
+              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-indigo-600" />
+                    <h2 className="text-sm font-bold text-slate-800">
+                      {studentListMode === 'session'
+                        ? `Séance du jour (${selectedStudents.length}/${visibleAuthorizedCount})`
+                        : `Accords parentaux (${visibleAuthorizedCount}/${visibleStudents.length})`}
+                    </h2>
+                  </div>
+
+                  {studentListMode === 'session' && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={selectVisible}
+                        disabled={visibleAuthorizedCount === 0}
+                        title="Cocher uniquement les élèves autorisés visibles"
+                        className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 px-2 py-1 rounded border border-indigo-200 transition"
+                      >
+                        Cocher liste
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        className="text-[11px] font-semibold text-slate-600 bg-white hover:bg-slate-100 px-2 py-1 rounded border border-slate-200 transition"
+                      >
+                        Aucun
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-1.5">
+
+                {/* Interrupteur : Séance du jour / Accords parentaux */}
+                <div className="grid grid-cols-2 bg-slate-200/70 p-0.5 rounded-lg border border-slate-200">
                   <button
                     type="button"
-                    onClick={selectVisible}
-                    className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded border border-indigo-200 transition"
+                    onClick={() => setStudentListMode('session')}
+                    className={cn(
+                      'px-2.5 py-1.5 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5',
+                      studentListMode === 'session'
+                        ? 'bg-white text-indigo-700 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    )}
                   >
-                    Cocher liste
+                    <Users className="w-3.5 h-3.5" />
+                    Séance du jour
                   </button>
                   <button
                     type="button"
-                    onClick={clearSelection}
-                    className="text-[11px] font-semibold text-slate-600 bg-white hover:bg-slate-100 px-2 py-1 rounded border border-slate-200 transition"
+                    onClick={() => setStudentListMode('authorizations')}
+                    className={cn(
+                      'px-2.5 py-1.5 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5',
+                      studentListMode === 'authorizations'
+                        ? 'bg-white text-emerald-700 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    )}
                   >
-                    Aucun
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Accords parentaux
                   </button>
                 </div>
               </div>
 
-              <div className="p-3 border-b border-slate-100">
+              <div className="p-3 border-b border-slate-100 space-y-2">
                 <div className="relative">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
@@ -680,52 +777,155 @@ export default function ApcTab({
                     className="w-full pl-9 pr-3 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   />
                 </div>
+
+                {studentListMode === 'authorizations' ? (
+                  <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1.5">
+                    Cochez ou décochez l’accord parental APC de chaque élève (modifiable et réversible à tout moment).
+                  </p>
+                ) : (
+                  visibleAuthorizedCount === 0 && visibleStudents.length > 0 && (
+                    <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 flex items-center justify-between gap-2">
+                      <span>Aucun élève autorisé dans ce filtre.</span>
+                      <button
+                        type="button"
+                        onClick={() => setStudentListMode('authorizations')}
+                        className="font-bold underline hover:text-amber-950 shrink-0"
+                      >
+                        Gérer accords
+                      </button>
+                    </div>
+                  )
+                )}
+
+                {authError && (
+                  <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-2.5 py-1.5">
+                    {authError}
+                  </p>
+                )}
               </div>
 
-              <div className="divide-y divide-slate-100 max-h-[64vh] overflow-y-auto p-1.5">
+              <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto p-1.5">
                 {visibleStudents.map(student => {
+                  const isAuthorized = Boolean(student.apc_authorized);
                   const isChecked = selectedIds.has(student.id);
                   const stats = studentQuickStats.get(student.id) || { urgent: 0, consolidate: 0 };
+
+                  if (studentListMode === 'authorizations') {
+                    const isUpdating = togglingAuthId === student.id;
+                    return (
+                      <button
+                        type="button"
+                        key={student.id}
+                        disabled={isUpdating}
+                        onClick={() => handleToggleAuthorization(student)}
+                        className={cn(
+                          'w-full text-left flex items-center justify-between gap-2 px-3 py-2 rounded-lg transition',
+                          isAuthorized
+                            ? 'bg-emerald-50/60 hover:bg-emerald-50'
+                            : 'bg-white hover:bg-rose-50/40',
+                          isUpdating && 'opacity-60'
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {isAuthorized ? (
+                            <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <Square className="w-4 h-4 text-rose-400 shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-800 truncate">
+                              {student.firstName} <span className="uppercase">{student.lastName}</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span
+                            className={cn(
+                              'text-[10px] font-bold px-1.5 py-0.5 rounded border',
+                              isAuthorized
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                : 'bg-rose-100 text-rose-700 border-rose-200'
+                            )}
+                          >
+                            {isAuthorized ? 'Accord APC' : 'Sans accord'}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                            {student.grade}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  }
 
                   return (
                     <label
                       key={student.id}
+                      title={
+                        isAuthorized
+                          ? 'Cocher pour la séance APC du jour'
+                          : 'Autorisation parentale requise (modifiable dans Accords parentaux)'
+                      }
                       className={cn(
-                        'flex items-center justify-between gap-2 px-3 py-2 rounded-lg cursor-pointer transition',
-                        isChecked ? 'bg-indigo-50/70 hover:bg-indigo-50' : 'hover:bg-slate-50'
+                        'flex items-center justify-between gap-2 px-3 py-2 rounded-lg transition',
+                        !isAuthorized
+                          ? 'bg-slate-50/80 opacity-60 cursor-not-allowed'
+                          : isChecked
+                            ? 'bg-indigo-50/70 hover:bg-indigo-50 cursor-pointer'
+                            : 'hover:bg-slate-50 cursor-pointer'
                       )}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <input
                           type="checkbox"
                           className="sr-only"
-                          checked={isChecked}
-                          onChange={() => toggleStudent(student.id)}
+                          disabled={!isAuthorized}
+                          checked={isAuthorized && isChecked}
+                          onChange={() => toggleStudent(student)}
                         />
-                        {isChecked ? (
+                        {!isAuthorized ? (
+                          <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        ) : isChecked ? (
                           <CheckSquare className="w-4 h-4 text-indigo-600 shrink-0" />
                         ) : (
                           <Square className="w-4 h-4 text-slate-400 shrink-0" />
                         )}
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-800 truncate">
+                          <p
+                            className={cn(
+                              'text-xs font-bold truncate',
+                              isAuthorized ? 'text-slate-800' : 'text-slate-500'
+                            )}
+                          >
                             {student.firstName} <span className="uppercase">{student.lastName}</span>
                           </p>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {stats.urgent + stats.consolidate > 0 ? (
-                          <span
-                            className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded"
-                            title={`${stats.urgent} amorcée(s) < 3, ${stats.consolidate} en cours (3-4)`}
-                          >
-                            {stats.urgent + stats.consolidate} à consolider
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                            ≥ 5
-                          </span>
+                        <span
+                          className={cn(
+                            'text-[10px] font-bold px-1.5 py-0.5 rounded border',
+                            isAuthorized
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                              : 'bg-rose-100 text-rose-700 border-rose-200'
+                          )}
+                        >
+                          {isAuthorized ? 'Accord APC' : 'Sans accord'}
+                        </span>
+                        {isAuthorized && (
+                          stats.urgent + stats.consolidate > 0 ? (
+                            <span
+                              className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded"
+                              title={`${stats.urgent} amorcée(s) < 3, ${stats.consolidate} en cours (3-4)`}
+                            >
+                              {stats.urgent + stats.consolidate} à consolider
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                              ≥ 5
+                            </span>
+                          )
                         )}
                         <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
                           {student.grade}

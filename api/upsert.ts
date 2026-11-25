@@ -13,9 +13,11 @@ async function ensureTables(sql: ReturnType<typeof neon>) {
         "grade" text NOT NULL,
         "level" text,
         "isArchived" boolean DEFAULT false NOT NULL,
+        "apc_authorized" boolean DEFAULT false NOT NULL,
         "teacher_id" varchar(100) DEFAULT 'JulieCB' NOT NULL
       );
     `;
+    await sql`ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "apc_authorized" boolean DEFAULT false NOT NULL`;
     await sql`
       CREATE TABLE IF NOT EXISTS "Competence" (
         "id" serial PRIMARY KEY,
@@ -215,7 +217,11 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'GET') {
     try {
       // 1. Chargement des données principales (Élèves, Compétences, Résultats)
-      const students = await sql`SELECT * FROM "Student" ORDER BY "isArchived" ASC, "lastName" ASC`;
+      const rawStudents = await sql`SELECT * FROM "Student" ORDER BY "isArchived" ASC, "lastName" ASC`;
+      const students = rawStudents.map((s: any) => ({
+        ...s,
+        apc_authorized: Boolean(s.apc_authorized)
+      }));
       const competences = await sql`SELECT * FROM "Competence" ORDER BY id ASC`;
       const resultsRaw = await sql`SELECT * FROM "Result"`;
       
@@ -403,6 +409,20 @@ export default async function handler(req: any, res: any) {
       if (body.type === 'student_archive') {
         await sql`UPDATE "Student" SET "isArchived" = ${body.isArchived} WHERE id = ${body.id}`;
         return res.status(200).json({ success: true });
+      }
+
+      if (body.type === 'student_apc_authorization') {
+        const studentId = typeof body.studentId === 'string' ? body.studentId.trim().slice(0, 120) : '';
+        if (!studentId) {
+          return res.status(400).json({ error: 'Identifiant élève manquant.' });
+        }
+        const apcAuthorized = Boolean(body.apcAuthorized);
+        await sql`
+          UPDATE "Student"
+          SET "apc_authorized" = ${apcAuthorized}
+          WHERE id = ${studentId} AND "teacher_id" = 'JulieCB'
+        `;
+        return res.status(200).json({ success: true, studentId, apc_authorized: apcAuthorized });
       }
 
       if (body.type === 'competence_bulk') {

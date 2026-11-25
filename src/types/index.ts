@@ -4,6 +4,7 @@ export type Student = {
   lastName: string;
   grade: string;
   isArchived: boolean;
+  apc_authorized?: boolean;
 };
 
 export type Competence = {

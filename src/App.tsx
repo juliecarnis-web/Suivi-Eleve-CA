@@ -303,6 +303,32 @@ export default function App() {
     setApcEntries(prev => prev.filter(e => e.session_id !== sessionId));
   }, []);
 
+  const handleToggleApcAuthorization = useCallback(async (studentId: string, apcAuthorized: boolean) => {
+    setStudents(prev =>
+      prev.map(s => (s.id === studentId ? { ...s, apc_authorized: apcAuthorized } : s))
+    );
+    try {
+      const res = await fetch('/api/upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'student_apc_authorization',
+          studentId,
+          apcAuthorized
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Échec de mise à jour de l’autorisation APC.');
+      }
+    } catch (err) {
+      setStudents(prev =>
+        prev.map(s => (s.id === studentId ? { ...s, apc_authorized: !apcAuthorized } : s))
+      );
+      throw err;
+    }
+  }, []);
+
   const handleSaveParentPriorities = useCallback(async (studentId: string, competenceIds: number[]) => {
     const res = await fetch('/api/upsert', {
       method: 'POST',
@@ -704,6 +730,7 @@ export default function App() {
           handleToggleEditMode={handleToggleEditMode}
           onSaveApcSession={handleSaveApcSession}
           onDeleteApcSession={handleDeleteApcSession}
+          onToggleApcAuthorization={handleToggleApcAuthorization}
         />
       )}
 
