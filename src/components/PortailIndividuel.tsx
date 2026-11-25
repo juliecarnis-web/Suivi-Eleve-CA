@@ -6,6 +6,8 @@ import { getGrade, getDomain, scaleScore, createDomainSorter } from '../utils/he
 import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
 import BilanGeneratorPanel from './BilanGeneratorPanel';
 import ParentPrioritySelectorPanel from './ParentPrioritySelectorPanel';
+import StudentExpertBadgesPanel from './StudentExpertBadgesPanel';
+import { getStudentExpertChapters } from '../utils/expertHelpers';
 
 interface PortailIndividuelProps {
   activeStudents: Student[];
@@ -281,6 +283,12 @@ export default function PortailIndividuel({
     } else {
       lines.push('Aucun résultat par domaine.');
     }
+    const expertEntries = getStudentExpertChapters(student, competences, results);
+    if (expertEntries.length > 0) {
+      const over5 = expertEntries.filter(e => e.tier === 'expert_over_5').length;
+      const at5 = expertEntries.length - over5;
+      lines.push(`- Badges Expert : ${expertEntries.length} chapitre(s) (${over5} Expert+ > 5/5, ${at5} Expert 5/5)`);
+    }
     lines.push('');
 
     // 2. Résultats en Fluence pour chaque entrée
@@ -477,6 +485,14 @@ export default function PortailIndividuel({
           </div>
         </div>
       </div>
+
+      {/* 1 bis. Badges Expert(e) par chapitre */}
+      <StudentExpertBadgesPanel
+        student={currentStudent}
+        competences={competences}
+        results={results}
+        audience="teacher"
+      />
 
       {/* 1 ter. Sélection pondérée pour le cartouche "Je travaille en priorité..." du Portail Parents */}
       <ParentPrioritySelectorPanel

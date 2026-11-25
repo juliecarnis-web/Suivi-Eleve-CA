@@ -7,6 +7,7 @@ import {
 } from '../types';
 import { getCode, getGrade, getDomain } from './helpers';
 import { getEvaluatedCompetenceMap, EvaluatedCompetenceInfo } from './bilanGenerator';
+import { ExpertTier, getExpertTier } from './expertHelpers';
 
 export interface AutonomieCompetenceItem {
   competence: Competence;
@@ -23,16 +24,29 @@ export interface AutonomieCompetenceItem {
 export interface ExpertCandidate {
   student: Student;
   score: number;
+  tier: ExpertTier;
   isSameGrade: boolean;
   isSelectedInSession: boolean;
   matchedCode: string;
   matchedTitle: string;
 }
 
+export interface AutonomieExpertChapter {
+  competence: Competence;
+  code: string;
+  title: string;
+  domain: string;
+  subDomain: string;
+  grade: string;
+  score: number;
+  tier: ExpertTier;
+}
+
 export interface StudentAutonomieProfile {
   student: Student;
   soloChapters: AutonomieCompetenceItem[];
   blockingChapters: AutonomieCompetenceItem[];
+  expertChapters: AutonomieExpertChapter[];
   evaluatedCount: number;
   masteredCount: number;
   isAllMasteredInFilter: boolean;
@@ -102,6 +116,7 @@ export function buildAutonomieProfiles(
     let masteredCount = 0;
     const soloChapters: AutonomieCompetenceItem[] = [];
     const blockingChapters: AutonomieCompetenceItem[] = [];
+    const expertChapters: AutonomieExpertChapter[] = [];
 
     gradeComps.forEach(comp => {
       const res = results[student.id]?.[comp.id];
@@ -112,6 +127,16 @@ export function buildAutonomieProfiles(
       const score = Number(res.score);
       if (score >= 5) {
         masteredCount++;
+        expertChapters.push({
+          competence: comp,
+          code: getCode(comp),
+          title: cleanTitle(comp.title),
+          domain: getDomain(comp) || 'Sans domaine',
+          subDomain: (comp.subDomain || '').trim() || 'Général',
+          grade: getGrade(comp),
+          score,
+          tier: getExpertTier(score) || 'expert_5'
+        });
         return;
       }
 
@@ -173,10 +198,17 @@ export function buildAutonomieProfiles(
     });
     curriculumSuggestions.sort((a, b) => a.score - b.score);
 
+    expertChapters.sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier === 'expert_over_5' ? -1 : 1;
+      if (b.score !== a.score) return b.score - a.score;
+      return a.code.localeCompare(b.code, 'fr', { numeric: true });
+    });
+
     return {
       student,
       soloChapters,
       blockingChapters,
+      expertChapters,
       evaluatedCount,
       masteredCount,
       isAllMasteredInFilter: evaluatedCount > 0 && soloChapters.length === 0 && blockingChapters.length === 0,
@@ -209,9 +241,11 @@ export function findExpertsForChapter(
       const res = results[st.id]?.[chapter.competenceId!];
       if (!res || !res.isStarted || res.score === null || res.score === undefined) return;
       if (Number(res.score) >= 5) {
+        const sc = Number(res.score);
         candidates.push({
           student: st,
-          score: Number(res.score),
+          score: sc,
+          tier: getExpertTier(sc) || 'expert_5',
           isSameGrade: true,
           isSelectedInSession: selectedIds.has(st.id),
           matchedCode: chapter.code,
@@ -244,13 +278,15 @@ export function findExpertsForChapter(
           }
         });
         if (bestMatch) {
+          const matched = bestMatch as { comp: Competence; score: number };
           candidates.push({
             student: st,
-            score: (bestMatch as { comp: Competence; score: number }).score,
+            score: matched.score,
+            tier: getExpertTier(matched.score) || 'expert_5',
             isSameGrade: false,
             isSelectedInSession: selectedIds.has(st.id),
-            matchedCode: getCode((bestMatch as { comp: Competence; score: number }).comp),
-            matchedTitle: cleanTitle((bestMatch as { comp: Competence; score: number }).comp.title)
+            matchedCode: getCode(matched.comp),
+            matchedTitle: cleanTitle(matched.comp.title)
           });
         }
       });

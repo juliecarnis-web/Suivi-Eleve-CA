@@ -34,6 +34,7 @@ import {
   AutonomieAssignment
 } from '../utils/autonomieRecommender';
 import AutonomieTniModal, { TniPlanItem } from './AutonomieTniModal';
+import ExpertBadge from './ExpertBadge';
 
 interface AutonomieTabProps {
   activeStudents: Student[];
@@ -787,8 +788,16 @@ export default function AutonomieTab({
                       Recherche ciblée d’un(e) élève expert(e)
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Choisissez un élève et un chapitre bloquant (0–3 réussites, hors NE) pour afficher immédiatement les expert(e)s disponibles (≥ 5/5).
+                      Choisissez un élève et un chapitre bloquant (0–3 réussites, hors NE) pour afficher immédiatement les expert(e)s disponibles.
                     </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] font-semibold">
+                    <span className="px-2 py-0.5 rounded border bg-emerald-100 text-emerald-800 border-emerald-300">
+                      Vert : 5/5
+                    </span>
+                    <span className="px-2 py-0.5 rounded border bg-emerald-800 text-white border-emerald-900">
+                      Vert foncé : &gt; 5/5
+                    </span>
                   </div>
                 </div>
 
@@ -912,9 +921,11 @@ export default function AutonomieTab({
                                   </span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px]">
-                                  <span className="font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded">
-                                    {cand.score}/5 sur {cand.matchedCode}
-                                  </span>
+                                  <ExpertBadge
+                                    score={cand.score}
+                                    compact
+                                    suffix={`· ${cand.matchedCode}`}
+                                  />
                                   <span
                                     className={cn(
                                       'font-semibold px-1.5 py-0.5 rounded',
@@ -1062,13 +1073,52 @@ export default function AutonomieTab({
                               </span>
                             )}
                             {profile.isAllMasteredInFilter && (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md">
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md border',
+                                  profile.expertChapters.some(ec => ec.tier === 'expert_over_5')
+                                    ? 'text-white bg-emerald-800 border-emerald-900'
+                                    : 'text-emerald-800 bg-emerald-100 border-emerald-300'
+                                )}
+                              >
                                 <Award className="w-3.5 h-3.5" />
-                                Expert(e)
+                                {profile.expertChapters.some(ec => ec.tier === 'expert_over_5')
+                                  ? 'Expert+'
+                                  : 'Expert(e)'}
                               </span>
                             )}
                           </div>
                         </div>
+
+                        {/* Badges Expert obtenus sur les chapitres du filtre */}
+                        {profile.expertChapters.length > 0 && (
+                          <div className="bg-slate-50/80 border border-slate-200 rounded-lg p-2 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                              <span>Badges Expert dans ce filtre ({profile.expertChapters.length})</span>
+                              <span className="font-semibold normal-case text-slate-500">
+                                {profile.expertChapters.filter(ec => ec.tier === 'expert_over_5').length} vert foncé •{' '}
+                                {profile.expertChapters.filter(ec => ec.tier === 'expert_5').length} vert
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-0.5">
+                              {profile.expertChapters.map(ec => (
+                                <span
+                                  key={ec.competence.id}
+                                  title={`${ec.code} — ${ec.title} (${ec.score}/5)`}
+                                  className={cn(
+                                    'inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border tabular-nums',
+                                    ec.tier === 'expert_over_5'
+                                      ? 'bg-emerald-800 text-white border-emerald-900'
+                                      : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  )}
+                                >
+                                  <span className="font-mono">{ec.code}</span>
+                                  <span className="opacity-90">· {ec.score}/5</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Séquences déjà cochées sur d'autres filtres */}
                         {extraChecked.length > 0 && (
@@ -1291,12 +1341,18 @@ export default function AutonomieTab({
                                             <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
                                             Accompagné(e) par :
                                           </span>
-                                          {checkedEntry.expertId && studentById.get(checkedEntry.expertId) && (
-                                            <span className="text-[10px] font-bold text-violet-800 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded">
-                                              {studentById.get(checkedEntry.expertId)!.firstName} (
-                                              {studentById.get(checkedEntry.expertId)!.grade})
-                                            </span>
-                                          )}
+                                          {checkedEntry.expertId && studentById.get(checkedEntry.expertId) && (() => {
+                                            const chosenExp = experts.find(e => e.student.id === checkedEntry.expertId);
+                                            return (
+                                              <div className="flex items-center gap-1.5">
+                                                <span className="text-[10px] font-bold text-violet-800 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded">
+                                                  {studentById.get(checkedEntry.expertId)!.firstName} (
+                                                  {studentById.get(checkedEntry.expertId)!.grade})
+                                                </span>
+                                                {chosenExp && <ExpertBadge score={chosenExp.score} compact />}
+                                              </div>
+                                            );
+                                          })()}
                                         </div>
 
                                         <div className="flex flex-wrap gap-1.5">
@@ -1316,7 +1372,7 @@ export default function AutonomieTab({
                                                     isChosen ? null : cand.student.id
                                                   )
                                                 }
-                                                title={`${cand.student.firstName} ${cand.student.lastName} — ${cand.score}/5 sur ${cand.matchedCode}`}
+                                                title={`${cand.student.firstName} ${cand.student.lastName} — ${cand.score}/5 sur ${cand.matchedCode} (${cand.tier === 'expert_over_5' ? 'Expert+ > 5' : 'Expert 5/5'})`}
                                                 className={cn(
                                                   'text-[11px] font-semibold px-2 py-0.5 rounded-md border transition flex items-center gap-1',
                                                   isChosen
@@ -1332,12 +1388,22 @@ export default function AutonomieTab({
                                                 )}
                                                 <span
                                                   className={cn(
+                                                    'text-[9px] font-bold px-1 rounded tabular-nums',
+                                                    cand.tier === 'expert_over_5'
+                                                      ? 'bg-emerald-800 text-white'
+                                                      : 'bg-emerald-100 text-emerald-800'
+                                                  )}
+                                                >
+                                                  {cand.score}/5
+                                                </span>
+                                                <span
+                                                  className={cn(
                                                     'text-[9px] px-1 rounded',
                                                     isChosen
                                                       ? 'bg-white/20 text-white'
                                                       : currentLoad > 0
                                                         ? 'bg-amber-100 text-amber-800'
-                                                        : 'bg-emerald-100 text-emerald-800'
+                                                        : 'bg-slate-100 text-slate-600'
                                                   )}
                                                 >
                                                   {currentLoad > 0 ? `×${currentLoad}` : 'libre'}

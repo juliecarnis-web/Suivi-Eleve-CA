@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, ReferenceLine, Line } from 'recharts';
-import { Activity, Layers, BarChart2, User } from 'lucide-react';
+import { Activity, Layers, BarChart2, User, Award } from 'lucide-react';
 import { cn, getCode, getGrade, getDomain, createDomainSorter, scaleScore } from '../utils/helpers';
 import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
 import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ParentPriorityEntry } from '../types';
 import PortailIndividuel from './PortailIndividuel';
+import PilotageExpertsPanel from './PilotageExpertsPanel';
 import FluenceCharts from './fluence/FluenceCharts';
 import CurriculumCharts from './curriculum/CurriculumCharts';
 
@@ -47,6 +48,7 @@ export default function PilotageTab({
   const [isIndividualMode, setIsIndividualMode] = useState<boolean>(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [diagFilterGrade, setDiagFilterGrade] = useState<string>('all');
+  const expertsSectionRef = useRef<HTMLDivElement>(null);
   const portailSectionRef = useRef<HTMLDivElement>(null);
 
   const evaluatedCompMap = useMemo(
@@ -200,14 +202,24 @@ export default function PilotageTab({
           </select>
         </div>
 
-        <button
-          type="button"
-          onClick={() => portailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition whitespace-nowrap shrink-0"
-        >
-          <User className="w-3.5 h-3.5 text-indigo-600" />
-          Portail Élève &amp; Bilans
-        </button>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => expertsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition whitespace-nowrap shrink-0"
+          >
+            <Award className="w-3.5 h-3.5 text-emerald-700" />
+            Liste des Expert(e)s
+          </button>
+          <button
+            type="button"
+            onClick={() => portailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition whitespace-nowrap shrink-0"
+          >
+            <User className="w-3.5 h-3.5 text-indigo-600" />
+            Portail Élève &amp; Bilans
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 p-6 overflow-auto">
@@ -555,6 +567,16 @@ export default function PilotageTab({
                       </ul>
                   </div>
                 </div>
+            </div>
+
+            {/* Liste filtrable des Expert(e)s par chapitre */}
+            <div ref={expertsSectionRef}>
+              <PilotageExpertsPanel
+                activeStudents={activeStudents}
+                competences={competences}
+                results={results}
+                uniqueGrades={uniqueGrades}
+              />
             </div>
 
             {/* 1. Vision globale de la classe en Fluence et Curriculum */}

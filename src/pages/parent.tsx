@@ -5,6 +5,8 @@ import { Student, Competence, Result, FluenceScore, FluenceReference, Curriculum
 import { getCode, getDomain as getCompDomain, getGrade as getCompGrade, scaleScore, createDomainSorter } from '../utils/helpers';
 import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
 import { cleanChapterTitle, computeChapterMasteryPct } from '../utils/parentPriorities';
+import StudentExpertBadgesPanel from '../components/StudentExpertBadgesPanel';
+import ExpertBadge from '../components/ExpertBadge';
 
 export default function ParentPage() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -536,11 +538,14 @@ export default function ParentPage() {
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {studentPriorityCards.map(item => {
                      const pctValue = item.pct ?? 0;
-                     const barColor = item.isValidated
-                        ? 'bg-emerald-700'
-                        : pctValue >= 60
-                           ? 'bg-emerald-500'
-                           : 'bg-emerald-300';
+                     const isOver5 = item.score !== null && item.score > 5;
+                     const barColor = isOver5
+                        ? 'bg-emerald-800'
+                        : item.isValidated
+                           ? 'bg-emerald-600'
+                           : pctValue >= 60
+                              ? 'bg-emerald-500'
+                              : 'bg-emerald-300';
 
                      return (
                         <div
@@ -563,15 +568,13 @@ export default function ParentPage() {
                               </div>
 
                               {item.pct !== null ? (
-                                 <span
-                                    className={`text-xs font-extrabold px-2.5 py-1 rounded-lg shrink-0 border ${
-                                       item.isValidated
-                                          ? 'bg-emerald-700 text-white border-emerald-800'
-                                          : 'bg-white text-emerald-800 border-emerald-200'
-                                    }`}
-                                 >
-                                    {item.isValidated ? '100 % ✓ Validé' : `${item.pct} %`}
-                                 </span>
+                                 item.isValidated ? (
+                                    <ExpertBadge score={item.score} />
+                                 ) : (
+                                    <span className="text-xs font-extrabold px-2.5 py-1 rounded-lg shrink-0 border bg-white text-emerald-800 border-emerald-200">
+                                       {item.pct} %
+                                    </span>
+                                 )
                               ) : (
                                  <span className="text-[11px] font-semibold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded shrink-0">
                                     En cours
@@ -588,11 +591,13 @@ export default function ParentPage() {
                                     />
                                  </div>
                                  <p className="text-[11px] font-medium text-slate-600 text-right">
-                                    {item.isValidated
-                                       ? 'Objectif de maîtrise atteint !'
-                                       : item.pct >= 80
-                                          ? 'Presque validé — dernière étape'
-                                          : `${item.pct} % vers la validation`}
+                                    {isOver5
+                                       ? 'Objectif dépassé — maîtrise experte !'
+                                       : item.isValidated
+                                          ? 'Objectif de maîtrise atteint !'
+                                          : item.pct >= 80
+                                             ? 'Presque validé — dernière étape'
+                                             : `${item.pct} % vers la validation`}
                                  </p>
                               </div>
                            )}
@@ -602,6 +607,15 @@ export default function ParentPage() {
                </div>
             </div>
          )}
+
+         {/* Cartouche Badges Expert(e) par chapitre */}
+         <StudentExpertBadgesPanel
+            student={student}
+            competences={competences}
+            results={results}
+            audience="parent"
+            className="rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 print-break-inside-avoid"
+         />
 
          {/* BLOC PROFIL & PROGRESSION EN FLUENCE */}
          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
