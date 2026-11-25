@@ -45,6 +45,7 @@ export default function ParentPrioritySelectorPanel({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<string>('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [isPanelOpen, setIsPanelOpen] = useState<boolean>(false);
 
   useEffect(() => {
     setDraftIds(savedIdsForStudent);
@@ -135,10 +136,25 @@ export default function ParentPrioritySelectorPanel({
   };
 
   return (
-    <div className="p-6 bg-slate-50/70 border-b border-slate-200 space-y-4">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+    <div className="p-6 bg-slate-50/70 border-b border-slate-200">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isPanelOpen}
+        onClick={() => setIsPanelOpen(prev => !prev)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsPanelOpen(prev => !prev);
+          }
+        }}
+        className={cn(
+          'flex flex-col lg:flex-row lg:items-center justify-between gap-3 cursor-pointer select-none group',
+          isPanelOpen && 'pb-4 mb-4 border-b border-slate-200'
+        )}
+      >
         <div>
-          <h3 className="font-bold text-slate-800 flex items-center gap-2 text-base">
+          <h3 className="font-bold text-slate-800 flex flex-wrap items-center gap-2 text-base group-hover:text-emerald-900 transition-colors">
             <Target className="w-5 h-5 text-emerald-600 shrink-0" />
             <span>Priorités pour le Portail Parents (« Je travaille en priorité... »)</span>
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -155,48 +171,61 @@ export default function ParentPrioritySelectorPanel({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start lg:self-center">
           {feedback && (
             <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
               <CheckCircle2 className="w-3.5 h-3.5" />
               {feedback}
             </span>
           )}
-          <button
-            type="button"
-            onClick={handlePreselectTop3}
-            disabled={weightedGroups.length === 0}
-            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-emerald-50 disabled:opacity-40 text-emerald-800 border border-emerald-200 transition inline-flex items-center gap-1.5"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-            Pré-cocher top 3
-          </button>
-          {draftIds.length > 0 && (
-            <button
-              type="button"
-              onClick={handleClearAll}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 transition"
-            >
-              Tout décocher
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving || !hasUnsavedChanges}
-            className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-700 hover:bg-emerald-800 disabled:opacity-45 text-white shadow-xs transition inline-flex items-center gap-1.5"
-          >
-            <Save className="w-3.5 h-3.5" />
-            {isSaving ? 'Enregistrement...' : 'Enregistrer pour le portail parent'}
-          </button>
+          <span className="p-1 rounded-lg text-slate-400 group-hover:text-slate-700 group-hover:bg-slate-200/60 transition">
+            <ChevronDown
+              className={cn(
+                'w-5 h-5 transition-transform duration-200',
+                isPanelOpen && 'rotate-180'
+              )}
+            />
+          </span>
         </div>
       </div>
 
-      {weightedGroups.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-5 text-center text-xs text-slate-500">
-          Aucun chapitre à consolider (&lt; 5/5, hors NE) pour {currentStudent.firstName} pour le moment.
-        </div>
-      ) : (
+      {isPanelOpen && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={handlePreselectTop3}
+              disabled={weightedGroups.length === 0}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-emerald-50 disabled:opacity-40 text-emerald-800 border border-emerald-200 transition inline-flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              Pré-cocher top 3
+            </button>
+            {draftIds.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 transition"
+              >
+                Tout décocher
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || !hasUnsavedChanges}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-700 hover:bg-emerald-800 disabled:opacity-45 text-white shadow-xs transition inline-flex items-center gap-1.5"
+            >
+              <Save className="w-3.5 h-3.5" />
+              {isSaving ? 'Enregistrement...' : 'Enregistrer pour le portail parent'}
+            </button>
+          </div>
+
+          {weightedGroups.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 text-center text-xs text-slate-500">
+              Aucun chapitre à consolider (&lt; 5/5, hors NE) pour {currentStudent.firstName} pour le moment.
+            </div>
+          ) : (
         <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
           {weightedGroups.map((group, idx) => {
             const isOpen = expandedGroups[group.key] ?? idx < 2;
@@ -314,6 +343,8 @@ export default function ParentPrioritySelectorPanel({
               </div>
             );
           })}
+        </div>
+      )}
         </div>
       )}
     </div>

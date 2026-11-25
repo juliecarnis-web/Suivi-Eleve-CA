@@ -505,34 +505,6 @@ export default function PortailIndividuel({
         onSavePriorities={saveParentPriorities}
       />
 
-      {/* 1 bis. Assistant de Bilan Pré-rédigé (Sans IA) */}
-      <BilanGeneratorPanel
-        currentStudent={currentStudent}
-        cohortStudents={portailStudents}
-        activeStudents={activeStudents}
-        competences={competences}
-        results={results}
-        fluenceScores={fluenceScores}
-        fluenceReferences={fluenceReferences}
-        curriculumItems={curriculumItems}
-        curriculumResults={curriculumResults}
-        selectedGradeLabel={portailGrade}
-        onApplyToObservation={async (text) => {
-          const trimmed = portailObservation.trim();
-          const nextVal = trimmed ? `${trimmed}\n\n${text}` : text;
-          setPortailObservation(nextVal);
-          if (portailStudentId) {
-            try {
-              await saveObservation(portailStudentId, nextVal);
-              setObsFeedback('✅ Enregistré');
-              setTimeout(() => setObsFeedback(''), 2000);
-            } catch {
-              setObsFeedback('❌ Erreur');
-            }
-          }
-        }}
-      />
-
       {/* 2. Graphique individuel de progression en fluence de l'élève */}
       <div className="p-6 bg-white border-b border-slate-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
@@ -721,6 +693,34 @@ export default function PortailIndividuel({
           )}
         </div>
       </div>
+
+      {/* 4. Assistant de Bilan Pré-rédigé (Sans IA) */}
+      <BilanGeneratorPanel
+        currentStudent={currentStudent}
+        cohortStudents={portailStudents}
+        activeStudents={activeStudents}
+        competences={competences}
+        results={results}
+        fluenceScores={fluenceScores}
+        fluenceReferences={fluenceReferences}
+        curriculumItems={curriculumItems}
+        curriculumResults={curriculumResults}
+        selectedGradeLabel={portailGrade}
+        onApplyToObservation={async (text) => {
+          const trimmed = portailObservation.trim();
+          const nextVal = trimmed ? `${trimmed}\n\n${text}` : text;
+          setPortailObservation(nextVal);
+          if (portailStudentId) {
+            try {
+              await saveObservation(portailStudentId, nextVal);
+              setObsFeedback('✅ Enregistré');
+              setTimeout(() => setObsFeedback(''), 2000);
+            } catch {
+              setObsFeedback('❌ Erreur');
+            }
+          }
+        }}
+      />
     </div>
   );
 }

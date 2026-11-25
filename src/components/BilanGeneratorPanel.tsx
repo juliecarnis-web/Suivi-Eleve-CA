@@ -7,8 +7,10 @@ import {
   ArrowUpRight,
   Users,
   X,
-  Sparkles
+  Sparkles,
+  ChevronDown
 } from 'lucide-react';
+import { cn } from '../utils/helpers';
 import {
   Student,
   Competence,
@@ -57,6 +59,7 @@ export default function BilanGeneratorPanel({
   const [draftText, setDraftText] = useState<string>('');
   const [copiedSingle, setCopiedSingle] = useState<boolean>(false);
   const [insertedFeedback, setInsertedFeedback] = useState<boolean>(false);
+  const [isPanelOpen, setIsPanelOpen] = useState<boolean>(false);
 
   // Modale export série pour toute la classe / le niveau
   const [isClassModalOpen, setIsClassModalOpen] = useState<boolean>(false);
@@ -166,76 +169,110 @@ export default function BilanGeneratorPanel({
 
   return (
     <>
-      <div className="p-6 bg-slate-50 border-b border-slate-200">
-        <div className="bg-white rounded-xl border border-indigo-200/80 shadow-xs p-5 space-y-4">
-          {/* En-tête et contrôles */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+      <div className="p-6 bg-slate-50 border-t border-slate-200">
+        <div className="bg-white rounded-xl border border-indigo-200/80 shadow-xs p-5">
+          {/* En-tête cliquable avec flèche de repli */}
+          <div
+            role="button"
+            tabIndex={0}
+            aria-expanded={isPanelOpen}
+            onClick={() => setIsPanelOpen(prev => !prev)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setIsPanelOpen(prev => !prev);
+              }
+            }}
+            className={cn(
+              'flex flex-col lg:flex-row lg:items-center justify-between gap-3 cursor-pointer select-none group',
+              isPanelOpen && 'pb-3 mb-4 border-b border-slate-100'
+            )}
+          >
             <div>
-              <h3 className="font-bold text-slate-800 flex items-center gap-2 text-base">
-                <FileText className="w-5 h-5 text-indigo-600" />
-                Assistant de Bilan Pré-rédigé (Sans IA)
+              <h3 className="font-bold text-slate-800 flex items-center gap-2 text-base group-hover:text-indigo-900 transition-colors">
+                <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
+                <span>Assistant de Bilan Pré-rédigé (Sans IA)</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Texte assemblé automatiquement à partir des chapitres évalués (moy. classe &gt; 0), de la fluence et du curriculum.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setStyle('lsu')}
-                  className={`px-3 py-1.5 rounded-md font-bold transition ${
-                    style === 'lsu'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Format LSU
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStyle('parents')}
-                  className={`px-3 py-1.5 rounded-md font-bold transition ${
-                    style === 'parents'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  RDV Parents
-                </button>
-              </div>
-
-              <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition">
-                <input
-                  type="checkbox"
-                  checked={includeNumbers}
-                  onChange={e => setIncludeNumbers(e.target.checked)}
-                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            <div className="flex flex-wrap items-center gap-2 shrink-0 self-start lg:self-center">
+              {currentSummary && currentSummary.rawAvg5 !== null && (
+                <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-md tabular-nums">
+                  {currentSummary.targetPct} % obj. 5 ({currentSummary.rawAvg5}/5)
+                </span>
+              )}
+              <span className="p-1 rounded-lg text-slate-400 group-hover:text-slate-700 group-hover:bg-slate-100 transition">
+                <ChevronDown
+                  className={cn(
+                    'w-5 h-5 transition-transform duration-200',
+                    isPanelOpen && 'rotate-180'
+                  )}
                 />
-                <span>Chiffres</span>
-              </label>
-
-              <button
-                type="button"
-                onClick={() => setVariant(prev => (prev + 1) % 3)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition"
-                title="Changer la tournure des phrases"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-indigo-600" />
-                Varier ({variant + 1}/3)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsClassModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-xs font-bold text-indigo-700 transition"
-              >
-                <Users className="w-3.5 h-3.5" />
-                Export Série ({cohortStudents.length})
-              </button>
+              </span>
             </div>
           </div>
+
+          {isPanelOpen && (
+            <div className="space-y-4">
+              {/* Contrôles */}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setStyle('lsu')}
+                    className={`px-3 py-1.5 rounded-md font-bold transition ${
+                      style === 'lsu'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Format LSU
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStyle('parents')}
+                    className={`px-3 py-1.5 rounded-md font-bold transition ${
+                      style === 'parents'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    RDV Parents
+                  </button>
+                </div>
+
+                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition">
+                  <input
+                    type="checkbox"
+                    checked={includeNumbers}
+                    onChange={e => setIncludeNumbers(e.target.checked)}
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>Chiffres</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setVariant(prev => (prev + 1) % 3)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition"
+                  title="Changer la tournure des phrases"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-indigo-600" />
+                  Varier ({variant + 1}/3)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsClassModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-xs font-bold text-indigo-700 transition"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  Export Série ({cohortStudents.length})
+                </button>
+              </div>
 
           {/* Repères factuels détectés */}
           {currentSummary && (
@@ -312,6 +349,8 @@ export default function BilanGeneratorPanel({
               </button>
             </div>
           </div>
+            </div>
+          )}
         </div>
       </div>
 
