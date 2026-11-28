@@ -355,7 +355,7 @@ export default function AutonomieTab({
     setTimeout(() => setFlashMessage(''), 3000);
   };
 
-  // Seules les séquences cochées des élèves sélectionnés passent au TNI
+  // Seules les séquences cochées des élèves sélectionnés passent au TNI (mode "Cochés en saisie")
   const tniItems: TniPlanItem[] = useMemo(() => {
     const items: TniPlanItem[] = [];
     selectedStudents.forEach(student => {
@@ -372,6 +372,133 @@ export default function AutonomieTab({
     });
     return items;
   }, [selectedStudents, checkedByStudent, studentById]);
+
+  // Ensemble des chapitres par ordre de priorité pour les élèves sélectionnés (mode "Par priorité")
+  const priorityTniItems: TniPlanItem[] = useMemo(() => {
+    const items: TniPlanItem[] = [];
+    const expertLoad = new Map<string, number>();
+
+    profiles.forEach(profile => {
+      const checkedList = checkedByStudent[profile.student.id] || [];
+      const checkedMap = new Map(checkedList.map(c => [c.itemKey, c]));
+
+      profile.soloChapters.forEach(ch => {
+        items.push({
+          itemKey: `${profile.student.id}_prio_solo_${ch.competence.id}`,
+          student: profile.student,
+          assignment: {
+            mode: 'solo',
+            competenceId: ch.competence.id,
+            chapterCode: ch.code,
+            chapterTitle: ch.title,
+            domain: ch.domain,
+            subDomain: ch.subDomain,
+            currentScore: ch.score,
+            expertId: null
+          },
+          expert: null
+        });
+      });
+
+      profile.blockingChapters.forEach(ch => {
+        const checkedEntry = checkedMap.get(`tutor_${ch.competence.id}`);
+        let chosenExpert: Student | null = null;
+
+        if (checkedEntry) {
+          chosenExpert = checkedEntry.expertId ? studentById.get(checkedEntry.expertId) || null : null;
+        } else {
+          const candidates = findExpertsForChapter(
+            {
+              competenceId: ch.competence.id,
+              grade: ch.grade,
+              domain: ch.domain,
+              subDomain: ch.subDomain,
+              code: ch.code,
+              title: ch.title
+            },
+            profile.student.id,
+            activeStudents,
+            selectedIds,
+            competences,
+            results,
+            allowCrossGrade
+          );
+          const balanced = [...candidates].sort((a, b) => {
+            const loadA = expertLoad.get(a.student.id) || 0;
+            const loadB = expertLoad.get(b.student.id) || 0;
+            return loadA - loadB;
+          });
+          chosenExpert = balanced[0]?.student ?? null;
+          if (chosenExpert) {
+            expertLoad.set(chosenExpert.id, (expertLoad.get(chosenExpert.id) || 0) + 1);
+          }
+        }
+
+        items.push({
+          itemKey: `${profile.student.id}_prio_tutor_${ch.competence.id}`,
+          student: profile.student,
+          assignment: {
+            mode: 'tutor',
+            competenceId: ch.competence.id,
+            chapterCode: ch.code,
+            chapterTitle: ch.title,
+            domain: ch.domain,
+            subDomain: ch.subDomain,
+            currentScore: ch.score,
+            expertId: chosenExpert?.id ?? null
+          },
+          expert: chosenExpert
+        });
+      });
+
+      if (profile.isAllMasteredInFilter) {
+        profile.curriculumSuggestions.forEach(({ item }) => {
+          items.push({
+            itemKey: `${profile.student.id}_prio_curr_${item.code}`,
+            student: profile.student,
+            assignment: {
+              mode: 'curriculum',
+              competenceId: null,
+              chapterCode: item.code,
+              chapterTitle: item.title,
+              domain: item.domain,
+              subDomain: item.subDomain || '',
+              currentScore: null,
+              expertId: null
+            },
+            expert: null
+          });
+        });
+
+        items.push({
+          itemKey: `${profile.student.id}_prio_expert_helper`,
+          student: profile.student,
+          assignment: {
+            mode: 'expert_helper',
+            competenceId: null,
+            chapterCode: 'EXPERT',
+            chapterTitle: 'Élève expert(e) / Tutorat disponible',
+            domain: 'Entraide',
+            subDomain: '',
+            currentScore: null,
+            expertId: null
+          },
+          expert: null
+        });
+      }
+    });
+
+    return items;
+  }, [
+    profiles,
+    checkedByStudent,
+    studentById,
+    activeStudents,
+    selectedIds,
+    competences,
+    results,
+    allowCrossGrade
+  ]);
 
   const soloCount = tniItems.filter(i => i.assignment.mode === 'solo' || i.assignment.mode === 'curriculum').length;
   const tutorCount = tniItems.filter(i => i.assignment.mode === 'tutor').length;
@@ -591,16 +718,18 @@ export default function AutonomieTab({
           <button
             type="button"
             onClick={() => setIsTniOpen(true)}
-            disabled={tniItems.length === 0}
+            disabled={tniItems.length === 0 && priorityTniItems.length === 0}
             title={
-              tniItems.length === 0
-                ? 'Cochez au moins une séquence à travailler pour l’afficher au TNI'
-                : 'Ouvrir l’affichage TNI pour les séquences cochées'
+              tniItems.length === 0 && priorityTniItems.length === 0
+                ? 'Sélectionnez des élèves à gauche ou cochez des séquences pour l’affichage TNI'
+                : 'Ouvrir l’affichage TNI en cartes élèves'
             }
             className="flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white shadow-sm transition"
           >
             <Monitor className="w-4 h-4" />
-            Affichage TNI ({tniItems.length})
+            {tniItems.length > 0
+              ? `Affichage TNI (${tniItems.length})`
+              : `Affichage TNI (${selectedStudents.length} élève${selectedStudents.length > 1 ? 's' : ''})`}
           </button>
         </div>
       </div>
@@ -1535,6 +1664,7 @@ export default function AutonomieTab({
         isOpen={isTniOpen}
         onClose={() => setIsTniOpen(false)}
         items={tniItems}
+        priorityItems={priorityTniItems}
         domainLabel={domainFilter}
         subDomainLabel={subDomainFilter}
       />

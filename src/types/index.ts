@@ -89,3 +89,48 @@ export type ParentPriorityEntry = {
   updated_at?: string;
 };
 
+export type AbsencePeriodConfig = {
+  period: number; // 1..5
+  label: string;
+  start: string; // YYYY-MM-DD
+  end: string;   // YYYY-MM-DD
+};
+
+export type AbsenceClosureScope = 'full' | 'AM' | 'PM';
+
+export type AbsenceClosure = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  label: string;
+  scope: AbsenceClosureScope;
+};
+
+export type AbsenceWeekDays = 4 | 4.5;
+export type AbsenceHalfDaySlot = 'wednesday_am' | 'saturday_am';
+
+export type AbsenceConfig = {
+  id?: string;
+  school_year: string; // e.g. '2026-2027'
+  teacher_name?: string;
+  week_days: AbsenceWeekDays;
+  half_day_slot: AbsenceHalfDaySlot;
+  periods: AbsencePeriodConfig[];
+  custom_closures: AbsenceClosure[];
+  excluded_auto_holidays: string[];
+  segment_headcounts: Record<string, number>;
+  updated_at?: string;
+};
+
+export type StudentAbsenceRecord = {
+  id: string;
+  school_year: string;
+  period: number; // 1..5
+  month_key: string; // YYYY-MM or 'ALL'
+  start_date: string; // YYYY-MM-DD
+  end_date: string;   // YYYY-MM-DD
+  student_id: string;
+  absent_half_days: number;
+  justified_half_days: number;
+  notes?: string;
+  updated_at?: string;
+};

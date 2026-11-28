@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { BookOpen, BarChart2, Settings, Lock, Loader2, X, ShieldAlert, Activity, Layers, Sparkles, Compass } from 'lucide-react';
+import { BookOpen, BarChart2, Settings, Lock, Loader2, X, ShieldAlert, Activity, Layers, Sparkles, Compass, CalendarCheck } from 'lucide-react';
 import { cn } from './utils/helpers';
-import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ApcEntry, ParentPriorityEntry } from './types';
+import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ApcEntry, ParentPriorityEntry, AbsenceConfig, StudentAbsenceRecord } from './types';
+import { createDefaultAbsenceConfig } from './utils/absences';
 
 import SaisieTab from './components/SaisieTab';
 import PilotageTab from './components/PilotageTab';
@@ -10,6 +11,7 @@ import FluenceTab from './components/fluence/FluenceTab';
 import CurriculumTab from './components/curriculum/CurriculumTab';
 import ApcTab, { ApcAssignmentDraft } from './components/ApcTab';
 import AutonomieTab from './components/AutonomieTab';
+import AbsencesTab from './components/absences/AbsencesTab';
 import ParentPage from './pages/parent';
 
 export default function App() {
@@ -40,8 +42,11 @@ export default function App() {
   const [curriculumResults, setCurriculumResults] = useState<CurriculumResult[]>([]);
   const [apcEntries, setApcEntries] = useState<ApcEntry[]>([]);
   const [parentPriorities, setParentPriorities] = useState<ParentPriorityEntry[]>([]);
+  const [userSettings, setUserSettings] = useState<any>(null);
+  const [absenceConfigs, setAbsenceConfigs] = useState<AbsenceConfig[]>([]);
+  const [studentAbsences, setStudentAbsences] = useState<StudentAbsenceRecord[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage' | 'curriculum' | 'fluence' | 'autonomie' | 'apc' | 'admin'>('saisie');
+  const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage' | 'curriculum' | 'fluence' | 'autonomie' | 'apc' | 'absences' | 'admin'>('saisie');
 
   const fetchData = useCallback(async () => {
     try {
@@ -60,6 +65,9 @@ export default function App() {
           setCurriculumResults(data.curriculumResults || []);
           setApcEntries(data.apcEntries || []);
           setParentPriorities(data.parentPriorities || []);
+          setUserSettings(data.userSettings || null);
+          setAbsenceConfigs(data.absenceConfigs || []);
+          setStudentAbsences(data.studentAbsences || []);
         } else {
           console.warn('API non disponible (HTML reçu), format vide en attendant.');
         }
@@ -349,6 +357,85 @@ export default function App() {
       ...prev.filter(p => p.student_id !== studentId)
     ]);
   }, []);
+
+  // --- HANDLERS ABSENCES ---
+  const handleSaveAbsenceConfig = useCallback(async (config: AbsenceConfig) => {
+    const res = await fetch('/api/upsert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'absence_config_upsert',
+        ...config
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Échec de l’enregistrement du calendrier des absences.');
+    }
+    const savedConfig: AbsenceConfig = data.config || config;
+    setAbsenceConfigs(prev => [
+      savedConfig,
+      ...prev.filter(c => c.school_year !== savedConfig.school_year)
+    ]);
+  }, []);
+
+  const handleSaveAbsenceSegment = useCallback(async (payload: {
+    schoolYear: string;
+    period: number;
+    monthKey: string;
+    startDate: string;
+    endDate: string;
+    headcount: number;
+    segmentKey: string;
+    entries: Array<{
+      studentId: string;
+      absentHalfDays: number;
+      justifiedHalfDays: number;
+      notes?: string;
+    }>;
+  }) => {
+    const res = await fetch('/api/upsert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'absence_records_bulk_upsert',
+        schoolYear: payload.schoolYear,
+        period: payload.period,
+        monthKey: payload.monthKey,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        entries: payload.entries
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Échec de la sauvegarde des absences.');
+    }
+    const savedEntries: StudentAbsenceRecord[] = Array.isArray(data.entries) ? data.entries : [];
+    setStudentAbsences(prev => {
+      const remaining = prev.filter(
+        r => !(
+          r.school_year === payload.schoolYear &&
+          Number(r.period) === payload.period &&
+          r.month_key === payload.monthKey
+        )
+      );
+      return [...remaining, ...savedEntries];
+    });
+
+    // Figer l'effectif du segment dans AbsenceConfig sans toucher à user_settings
+    const currentCfg =
+      absenceConfigs.find(c => c.school_year === payload.schoolYear) ||
+      createDefaultAbsenceConfig(payload.schoolYear);
+    const updatedCfg: AbsenceConfig = {
+      ...currentCfg,
+      segment_headcounts: {
+        ...(currentCfg.segment_headcounts || {}),
+        [payload.segmentKey]: payload.headcount
+      }
+    };
+    await handleSaveAbsenceConfig(updatedCfg);
+  }, [absenceConfigs, handleSaveAbsenceConfig]);
 
   const upsertResult = useCallback(async (
     studentId: string,
@@ -661,6 +748,9 @@ export default function App() {
             <button onClick={() => setActiveTab('apc')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'apc' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <Sparkles className="w-4 h-4" /> APC
             </button>
+            <button onClick={() => setActiveTab('absences')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'absences' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
+              <CalendarCheck className="w-4 h-4" /> Absences
+            </button>
             <button onClick={() => setActiveTab('admin')} className={cn("px-3 py-2 rounded-md font-medium text-sm transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0", activeTab === 'admin' ? 'bg-indigo-600 shadow-inner text-white' : 'text-indigo-100 hover:bg-indigo-600/50')}>
               <Settings className="w-4 h-4" /> Admin
             </button>
@@ -759,6 +849,19 @@ export default function App() {
           onSaveFluenceScore={handleSaveFluenceScore}
           onSaveBulkFluenceScores={handleSaveBulkFluenceScores}
           onSaveFluenceReferences={handleSaveFluenceReferences}
+        />
+      )}
+
+      {activeTab === 'absences' && (
+        <AbsencesTab
+          students={students}
+          absenceConfigs={absenceConfigs}
+          studentAbsences={studentAbsences}
+          userSettings={userSettings}
+          isEditMode={isEditMode}
+          handleToggleEditMode={handleToggleEditMode}
+          onSaveAbsenceConfig={handleSaveAbsenceConfig}
+          onSaveAbsenceSegment={handleSaveAbsenceSegment}
         />
       )}
 

@@ -1,10 +1,12 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ComposedChart, LineChart, Line, Bar, BarChart, Cell, XAxis, YAxis, Tooltip, Legend, ReferenceLine, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { BookOpen, User, CheckCircle, ChevronDown, Printer, Activity, Target, TrendingUp, Book, Layers, Award } from 'lucide-react';
+import { BookOpen, User, CheckCircle, ChevronDown, FileDown, Activity, Target, TrendingUp, Book, Layers, Award } from 'lucide-react';
 import { Student, Competence, Result, FluenceScore, FluenceReference, CurriculumItem, CurriculumResult, ParentPriorityEntry } from '../types';
 import { getCode, getDomain as getCompDomain, getGrade as getCompGrade, scaleScore, createDomainSorter } from '../utils/helpers';
 import { getEvaluatedCompetenceMap } from '../utils/bilanGenerator';
 import { cleanChapterTitle, computeChapterMasteryPct } from '../utils/parentPriorities';
+import { getStudentExpertChapters } from '../utils/expertHelpers';
+import { exportParentProfilePdf } from '../utils/parentPdfExport';
 import StudentExpertBadgesPanel from '../components/StudentExpertBadgesPanel';
 import ExpertBadge from '../components/ExpertBadge';
 
@@ -20,6 +22,10 @@ export default function ParentPage() {
   const [loading, setLoading] = useState(true);
   const [studentId, setStudentId] = useState<string>('');
   const [observation, setObservation] = useState('');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const profileChartRef = useRef<HTMLDivElement>(null);
+  const fluenceChartRef = useRef<HTMLDivElement>(null);
+  const curriculumChartRef = useRef<HTMLDivElement>(null);
 
   // Extract auth param from URL
   useEffect(() => {
@@ -378,6 +384,45 @@ export default function ParentPage() {
     };
   }, [student, curriculumItems, curriculumResults]);
 
+  const expertChapters = useMemo(() => {
+    if (!student) return [];
+    return getStudentExpertChapters(student, competences, results);
+  }, [student, competences, results]);
+
+  const handleExportPdf = async () => {
+    if (!student || isExportingPdf) return;
+    setIsExportingPdf(true);
+    try {
+      await exportParentProfilePdf({
+        student,
+        totalStock: calculateStudentStock(student.id),
+        progressionData,
+        domainData: portailDomainData,
+        priorityCards: studentPriorityCards,
+        expertChapters,
+        fluenceData: {
+          chartData: studentFluenceData.chartData,
+          hasData: studentFluenceData.hasData,
+          latestEntry: studentFluenceData.latestEntry,
+        },
+        curriculumData: {
+          itemsCount: studentCurriculumData.items.length,
+          chartData: studentCurriculumData.chartData,
+          summary: studentCurriculumData.summary,
+        },
+        detailedDomainData,
+        observation,
+        profileChartEl: profileChartRef.current,
+        fluenceChartEl: fluenceChartRef.current,
+        curriculumChartEl: curriculumChartRef.current,
+      });
+    } catch (err) {
+      console.error('Erreur export PDF portail famille:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><p className="text-slate-500">Chargement...</p></div>;
   }
@@ -405,8 +450,13 @@ export default function ParentPage() {
                    <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-tight">
                      {student.firstName} {student.lastName}
                    </h1>
-                   <button onClick={() => window.print()} className="no-print p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors flex items-center gap-2 text-sm font-semibold">
-                      <Printer className="w-4 h-4" /> <span className="hidden sm:inline">Imprimer le bilan</span>
+                   <button
+                      onClick={handleExportPdf}
+                      disabled={isExportingPdf}
+                      className="no-print px-3 py-2 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60 text-indigo-700 border border-indigo-200 rounded-lg transition-colors flex items-center gap-2 text-sm font-semibold"
+                   >
+                      <FileDown className="w-4 h-4" />
+                      <span className="hidden sm:inline">{isExportingPdf ? 'Exportation...' : 'Exporter en PDF'}</span>
                    </button>
                  </div>
                  <p className="text-slate-500 font-medium mt-1">Niveau : {student.grade}</p>
@@ -447,7 +497,7 @@ export default function ParentPage() {
             )}
 
             {chartPortailData.length > 0 ? (
-               <div className="h-[300px] w-full min-w-0 mt-4 rounded-xl overflow-hidden border border-slate-100 p-2 sm:p-4 bg-slate-50">
+               <div ref={profileChartRef} className="h-[300px] w-full min-w-0 mt-4 rounded-xl overflow-hidden border border-slate-100 p-2 sm:p-4 bg-slate-50">
                   <ResponsiveContainer width="100%" height="100%">
                      <ComposedChart data={chartPortailData} margin={{ top: 20, right: 10, left: -20, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -648,7 +698,7 @@ export default function ParentPage() {
 
             {studentFluenceData.hasData ? (
                <div>
-                  <div className="h-[280px] w-full min-w-0 mt-2 rounded-xl overflow-hidden border border-slate-100 p-2 sm:p-4 bg-slate-50">
+                  <div ref={fluenceChartRef} className="h-[280px] w-full min-w-0 mt-2 rounded-xl overflow-hidden border border-slate-100 p-2 sm:p-4 bg-slate-50">
                      <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={studentFluenceData.chartData} margin={{ top: 15, right: 20, left: -10, bottom: 10 }}>
                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
@@ -783,7 +833,7 @@ export default function ParentPage() {
                         <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">
                            Competences acquises ou en cours (au moins 1 point)
                         </h3>
-                        <div className="h-[320px] w-full min-w-0">
+                        <div ref={curriculumChartRef} className="h-[320px] w-full min-w-0">
                            <ResponsiveContainer width="100%" height="100%">
                               <BarChart data={studentCurriculumData.chartData} margin={{ top: 20, right: 15, left: -10, bottom: 50 }}>
                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />

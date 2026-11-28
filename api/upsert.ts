@@ -192,6 +192,42 @@ async function ensureTables(sql: ReturnType<typeof neon>) {
       );
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS "AbsenceConfig" (
+        "id" text PRIMARY KEY,
+        "school_year" text NOT NULL,
+        "teacher_name" text DEFAULT 'Julie Carnis-Bréart' NOT NULL,
+        "week_days" numeric(3,1) DEFAULT 4 NOT NULL,
+        "half_day_slot" text DEFAULT 'wednesday_am' NOT NULL,
+        "periods" jsonb DEFAULT '[]'::jsonb NOT NULL,
+        "custom_closures" jsonb DEFAULT '[]'::jsonb NOT NULL,
+        "excluded_auto_holidays" jsonb DEFAULT '[]'::jsonb NOT NULL,
+        "segment_headcounts" jsonb DEFAULT '{}'::jsonb NOT NULL,
+        "teacher_id" varchar(100) DEFAULT 'JulieCB' NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now(),
+        CONSTRAINT "unique_absence_config_year_teacher" UNIQUE("school_year", "teacher_id")
+      );
+    `;
+    await sql`ALTER TABLE "AbsenceConfig" ADD COLUMN IF NOT EXISTS "teacher_name" text DEFAULT 'Julie Carnis-Bréart'`;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS "StudentAbsence" (
+        "id" text PRIMARY KEY,
+        "school_year" text NOT NULL,
+        "period" integer NOT NULL,
+        "month_key" text NOT NULL,
+        "start_date" date NOT NULL,
+        "end_date" date NOT NULL,
+        "student_id" text NOT NULL,
+        "absent_half_days" numeric(6,1) DEFAULT 0 NOT NULL,
+        "justified_half_days" numeric(6,1) DEFAULT 0 NOT NULL,
+        "notes" text,
+        "teacher_id" varchar(100) DEFAULT 'JulieCB' NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now(),
+        CONSTRAINT "unique_student_absence_segment" UNIQUE("school_year", "period", "month_key", "student_id", "teacher_id")
+      );
+    `;
+
     tablesInitialized = true;
   } catch (err) {
     console.error("Erreur d'initialisation des tables:", err);
@@ -339,6 +375,67 @@ export default async function handler(req: any, res: any) {
         console.warn("Table ParentPriority non lisible:", e);
       }
 
+      let absenceConfigs: any[] = [];
+      try {
+        const rawConfigs = await sql`
+          SELECT
+            "id",
+            "school_year",
+            COALESCE("teacher_name", 'Julie Carnis-Bréart') as "teacher_name",
+            "week_days",
+            "half_day_slot",
+            "periods",
+            "custom_closures",
+            "excluded_auto_holidays",
+            "segment_headcounts",
+            "updated_at"
+          FROM "AbsenceConfig"
+          WHERE "teacher_id" = 'JulieCB'
+          ORDER BY "school_year" DESC
+        `;
+        absenceConfigs = rawConfigs.map((c: any) => ({
+          ...c,
+          teacher_name: typeof c.teacher_name === 'string' && c.teacher_name.trim() ? c.teacher_name.trim() : 'Julie Carnis-Bréart',
+          week_days: Number(c.week_days) === 4.5 ? 4.5 : 4,
+          half_day_slot: c.half_day_slot === 'saturday_am' ? 'saturday_am' : 'wednesday_am',
+          periods: Array.isArray(c.periods) ? c.periods : [],
+          custom_closures: Array.isArray(c.custom_closures) ? c.custom_closures : [],
+          excluded_auto_holidays: Array.isArray(c.excluded_auto_holidays) ? c.excluded_auto_holidays : [],
+          segment_headcounts: c.segment_headcounts && typeof c.segment_headcounts === 'object' ? c.segment_headcounts : {}
+        }));
+      } catch (e) {
+        console.warn("Table AbsenceConfig non lisible:", e);
+      }
+
+      let studentAbsences: any[] = [];
+      try {
+        const rawAbsences = await sql`
+          SELECT
+            "id",
+            "school_year",
+            "period",
+            "month_key",
+            TO_CHAR("start_date", 'YYYY-MM-DD') as "start_date",
+            TO_CHAR("end_date", 'YYYY-MM-DD') as "end_date",
+            "student_id",
+            "absent_half_days",
+            "justified_half_days",
+            "notes",
+            "updated_at"
+          FROM "StudentAbsence"
+          WHERE "teacher_id" = 'JulieCB'
+          ORDER BY "school_year" DESC, "period" ASC, "month_key" ASC
+        `;
+        studentAbsences = rawAbsences.map((a: any) => ({
+          ...a,
+          period: Number(a.period),
+          absent_half_days: Number(a.absent_half_days) || 0,
+          justified_half_days: Number(a.justified_half_days) || 0
+        }));
+      } catch (e) {
+        console.warn("Table StudentAbsence non lisible:", e);
+      }
+
       return res.status(200).json({
         connected: true,
         students,
@@ -350,7 +447,9 @@ export default async function handler(req: any, res: any) {
         curriculumItems,
         curriculumResults,
         apcEntries,
-        parentPriorities
+        parentPriorities,
+        absenceConfigs,
+        studentAbsences
       });
     } catch (error: any) {
       console.error("Erreur globale lors de la lecture des données:", error);
@@ -374,6 +473,8 @@ export default async function handler(req: any, res: any) {
         if (body.table === 'CurriculumResult') await sql`DELETE FROM "CurriculumResult" WHERE "teacher_id" = 'JulieCB'`;
         if (body.table === 'APC') await sql`DELETE FROM "APC" WHERE "teacher_id" = 'JulieCB'`;
         if (body.table === 'ParentPriority') await sql`DELETE FROM "ParentPriority" WHERE "teacher_id" = 'JulieCB'`;
+        if (body.table === 'AbsenceConfig') await sql`DELETE FROM "AbsenceConfig" WHERE "teacher_id" = 'JulieCB'`;
+        if (body.table === 'StudentAbsence') await sql`DELETE FROM "StudentAbsence" WHERE "teacher_id" = 'JulieCB'`;
         return res.status(200).json({ success: true });
       }
 
@@ -824,6 +925,200 @@ export default async function handler(req: any, res: any) {
         }
 
         return res.status(200).json({ success: true, studentId, entries: savedEntries });
+      }
+
+      if (body.type === 'absence_config_upsert') {
+        const schoolYear = typeof body.school_year === 'string' ? body.school_year.trim().slice(0, 20) : '';
+        if (!/^\d{4}-\d{4}$/.test(schoolYear)) {
+          return res.status(400).json({ error: 'Année scolaire invalide (format YYYY-YYYY attendu).' });
+        }
+
+        const weekDays = Number(body.week_days) === 4.5 ? 4.5 : 4;
+        const halfDaySlot = body.half_day_slot === 'saturday_am' ? 'saturday_am' : 'wednesday_am';
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+        const rawPeriods = Array.isArray(body.periods) ? body.periods : [];
+        const periods = rawPeriods
+          .map((p: any, idx: number) => ({
+            period: Number.isInteger(Number(p.period)) ? Number(p.period) : idx + 1,
+            label: typeof p.label === 'string' && p.label.trim() ? p.label.trim().slice(0, 60) : `Période ${idx + 1}`,
+            start: typeof p.start === 'string' && dateRegex.test(p.start.trim()) ? p.start.trim() : '',
+            end: typeof p.end === 'string' && dateRegex.test(p.end.trim()) ? p.end.trim() : ''
+          }))
+          .filter((p: any) => p.period >= 1 && p.period <= 5 && p.start && p.end && p.start <= p.end)
+          .slice(0, 5);
+
+        const allowedScopes = new Set(['full', 'AM', 'PM']);
+        const rawClosures = Array.isArray(body.custom_closures) ? body.custom_closures : [];
+        const customClosures = rawClosures
+          .map((c: any, idx: number) => ({
+            id: typeof c.id === 'string' && c.id.trim() ? c.id.trim().slice(0, 80) : `cl_${Date.now()}_${idx}`,
+            date: typeof c.date === 'string' && dateRegex.test(c.date.trim()) ? c.date.trim() : '',
+            label: typeof c.label === 'string' ? c.label.trim().slice(0, 120) : 'Fermeture',
+            scope: allowedScopes.has(c.scope) ? c.scope : 'full'
+          }))
+          .filter((c: any) => Boolean(c.date))
+          .slice(0, 100);
+
+        const rawExcluded = Array.isArray(body.excluded_auto_holidays) ? body.excluded_auto_holidays : [];
+        const excludedAutoHolidays = Array.from(
+          new Set(rawExcluded.filter((d: any) => typeof d === 'string' && dateRegex.test(d.trim())).map((d: string) => d.trim()))
+        ).slice(0, 50);
+
+        const rawHeadcounts = body.segment_headcounts && typeof body.segment_headcounts === 'object' && !Array.isArray(body.segment_headcounts)
+          ? body.segment_headcounts
+          : {};
+        const segmentHeadcounts: Record<string, number> = {};
+        for (const [k, v] of Object.entries(rawHeadcounts)) {
+          const safeKey = String(k).trim().slice(0, 40);
+          const count = Number(v);
+          if (safeKey && Number.isFinite(count) && count >= 0 && count <= 200) {
+            segmentHeadcounts[safeKey] = Math.round(count);
+          }
+        }
+
+        const teacherName =
+          typeof body.teacher_name === 'string' && body.teacher_name.trim()
+            ? body.teacher_name.trim().slice(0, 120)
+            : 'Julie Carnis-Bréart';
+
+        const configId = `abs_cfg_${schoolYear}_JulieCB`;
+        await sql`
+          INSERT INTO "AbsenceConfig" (
+            "id", "school_year", "teacher_name", "week_days", "half_day_slot", "periods",
+            "custom_closures", "excluded_auto_holidays", "segment_headcounts",
+            "teacher_id", "updated_at"
+          )
+          VALUES (
+            ${configId}, ${schoolYear}, ${teacherName}, ${weekDays}, ${halfDaySlot},
+            ${JSON.stringify(periods)}::jsonb,
+            ${JSON.stringify(customClosures)}::jsonb,
+            ${JSON.stringify(excludedAutoHolidays)}::jsonb,
+            ${JSON.stringify(segmentHeadcounts)}::jsonb,
+            'JulieCB', NOW()
+          )
+          ON CONFLICT ("school_year", "teacher_id") DO UPDATE SET
+            "teacher_name" = EXCLUDED."teacher_name",
+            "week_days" = EXCLUDED."week_days",
+            "half_day_slot" = EXCLUDED."half_day_slot",
+            "periods" = EXCLUDED."periods",
+            "custom_closures" = EXCLUDED."custom_closures",
+            "excluded_auto_holidays" = EXCLUDED."excluded_auto_holidays",
+            "segment_headcounts" = EXCLUDED."segment_headcounts",
+            "updated_at" = NOW()
+        `;
+
+        return res.status(200).json({
+          success: true,
+          config: {
+            id: configId,
+            school_year: schoolYear,
+            teacher_name: teacherName,
+            week_days: weekDays,
+            half_day_slot: halfDaySlot,
+            periods,
+            custom_closures: customClosures,
+            excluded_auto_holidays: excludedAutoHolidays,
+            segment_headcounts: segmentHeadcounts
+          }
+        });
+      }
+
+      if (body.type === 'absence_records_bulk_upsert') {
+        const schoolYear = typeof body.schoolYear === 'string' ? body.schoolYear.trim().slice(0, 20) : '';
+        const period = parseInt(body.period, 10);
+        const monthKey = typeof body.monthKey === 'string' ? body.monthKey.trim().slice(0, 20) : '';
+        const startDate = typeof body.startDate === 'string' ? body.startDate.trim() : '';
+        const endDate = typeof body.endDate === 'string' ? body.endDate.trim() : '';
+
+        if (!/^\d{4}-\d{4}$/.test(schoolYear)) {
+          return res.status(400).json({ error: 'Année scolaire invalide.' });
+        }
+        if (!Number.isInteger(period) || period < 1 || period > 5) {
+          return res.status(400).json({ error: 'Période invalide (1 à 5 attendu).' });
+        }
+        if (!/^(\d{4}-\d{2}|ALL)$/.test(monthKey)) {
+          return res.status(400).json({ error: 'Clé de mois invalide.' });
+        }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || startDate > endDate) {
+          return res.status(400).json({ error: 'Plage de dates invalide.' });
+        }
+
+        const rawEntries = Array.isArray(body.entries) ? body.entries : [];
+        const savedEntries: any[] = [];
+
+        for (const item of rawEntries) {
+          const studentId = typeof item.studentId === 'string' ? item.studentId.trim().slice(0, 120) : '';
+          if (!studentId) continue;
+
+          const rawAbsent = Number(item.absentHalfDays ?? 0);
+          const rawJustified = Number(item.justifiedHalfDays ?? 0);
+          const absentHalfDays = Number.isFinite(rawAbsent) && rawAbsent > 0 ? Math.min(500, Math.round(rawAbsent * 2) / 2) : 0;
+          const justifiedHalfDays = Number.isFinite(rawJustified) && rawJustified > 0
+            ? Math.min(absentHalfDays, Math.round(rawJustified * 2) / 2)
+            : 0;
+          const notes = typeof item.notes === 'string' ? item.notes.trim().slice(0, 400) : '';
+
+          if (absentHalfDays === 0 && justifiedHalfDays === 0 && !notes) {
+            await sql`
+              DELETE FROM "StudentAbsence"
+              WHERE "school_year" = ${schoolYear}
+                AND "period" = ${period}
+                AND "month_key" = ${monthKey}
+                AND "student_id" = ${studentId}
+                AND "teacher_id" = 'JulieCB'
+            `;
+            continue;
+          }
+
+          const recordId = `abs_${schoolYear}_P${period}_${monthKey}_${studentId}`;
+          await sql`
+            INSERT INTO "StudentAbsence" (
+              "id", "school_year", "period", "month_key", "start_date", "end_date",
+              "student_id", "absent_half_days", "justified_half_days", "notes",
+              "teacher_id", "updated_at"
+            )
+            VALUES (
+              ${recordId}, ${schoolYear}, ${period}, ${monthKey}, ${startDate}::date, ${endDate}::date,
+              ${studentId}, ${absentHalfDays}, ${justifiedHalfDays}, ${notes || null},
+              'JulieCB', NOW()
+            )
+            ON CONFLICT ("school_year", "period", "month_key", "student_id", "teacher_id") DO UPDATE SET
+              "start_date" = EXCLUDED."start_date",
+              "end_date" = EXCLUDED."end_date",
+              "absent_half_days" = EXCLUDED."absent_half_days",
+              "justified_half_days" = EXCLUDED."justified_half_days",
+              "notes" = EXCLUDED."notes",
+              "updated_at" = NOW()
+          `;
+
+          savedEntries.push({
+            id: recordId,
+            school_year: schoolYear,
+            period,
+            month_key: monthKey,
+            start_date: startDate,
+            end_date: endDate,
+            student_id: studentId,
+            absent_half_days: absentHalfDays,
+            justified_half_days: justifiedHalfDays,
+            notes
+          });
+        }
+
+        return res.status(200).json({ success: true, entries: savedEntries });
+      }
+
+      if (body.type === 'absence_record_delete') {
+        const recordId = typeof body.id === 'string' ? body.id.trim().slice(0, 160) : '';
+        if (!recordId) {
+          return res.status(400).json({ error: 'Identifiant d’absence manquant.' });
+        }
+        await sql`
+          DELETE FROM "StudentAbsence"
+          WHERE "id" = ${recordId} AND "teacher_id" = 'JulieCB'
+        `;
+        return res.status(200).json({ success: true });
       }
 
     } catch (error: any) {
